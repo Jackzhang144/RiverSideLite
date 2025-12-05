@@ -1,0 +1,210 @@
+const STATUS = document.getElementById("status");
+const LIST = document.getElementById("list");
+const HOME_BTN = document.getElementById("homeBtn");
+
+const THREAD_URL_NEW = (threadId) => `https://bbs.uestc.edu.cn/thread/${threadId}`;
+const THREAD_URL_OLD = (threadId) =>
+  `https://bbs.uestc.edu.cn/forum.php?mod=viewthread&tid=${threadId}`;
+const FALLBACK_URL_NEW = "https://bbs.uestc.edu.cn/messages/posts";
+const FALLBACK_URL_OLD = "https://bbs.uestc.edu.cn/home.php?mod=space&do=notice";
+const CHAT_URL_NEW = "https://bbs.uestc.edu.cn/messages/chat";
+const CHAT_URL_OLD = "https://bbs.uestc.edu.cn/home.php?mod=space&do=pm";
+let currentVersion = "new";
+
+init();
+
+function init() {
+  chrome.storage.local.get({ version: "new" }, ({ version }) => {
+    currentVersion = version === "old" ? "old" : "new";
+    HOME_BTN?.addEventListener("click", openHome);
+    fetchSummary().catch((error) => {
+      console.error(error);
+      setStatus("加载失败，请检查是否已登录。", true);
+    });
+  });
+}
+
+async function fetchSummary() {
+  setStatus("加载中...");
+  const { ok, data, error } = await chrome.runtime.sendMessage({
+    type: "fetchSummary",
+  });
+  if (!ok) {
+    if (error?.includes("401")) {
+      throw new Error("未登录或登录已失效，请先在站点登录后重试。");
+    }
+    throw new Error(error || "summary request failed");
+  }
+
+  // API 响应包裹了 code/message? 兼容直接取 data.data/new_notifications
+  if (data?.code && data.code !== 0) {
+    throw new Error(`summary api error: ${data.code}`);
+  }
+
+  const payload = data?.data && data.code !== undefined ? data.data : data;
+  const notifications = Array.isArray(payload?.new_notifications) ? payload.new_notifications : [];
+  const chats = Array.isArray(payload?.new_chats) ? payload.new_chats : [];
+  const chatCount = payload?.new_messages?.chat || 0;
+
+  renderLists(notifications, chats, chatCount);
+}
+
+function renderLists(notifications, chats, chatCount) {
+  LIST.innerHTML = "";
+  setStatus("");
+
+  if (chats.length || chatCount) {
+    LIST.appendChild(makeSectionTitle("站内信"));
+    if (chats.length) {
+      chats.forEach((chat) => {
+        const container = document.createElement("div");
+        container.className = "item";
+        container.addEventListener("click", () => openChat());
+        const title = document.createElement("div");
+        title.className = "title";
+        const author = chat.to_username || chat.last_author || "";
+        title.textContent = [author, chat.subject || "查看站内信"].filter(Boolean).join(" · ");
+        const summary = document.createElement("div");
+        summary.className = "summary";
+        summary.textContent = sliceText(chat.last_summary || "", 120);
+        container.appendChild(title);
+        container.appendChild(summary);
+        LIST.appendChild(container);
+      });
+    } else if (chatCount) {
+      const placeholder = document.createElement("div");
+      placeholder.className = "item";
+      placeholder.addEventListener("click", () => openChat());
+      const title = document.createElement("div");
+      title.className = "title";
+      title.textContent = `您有 ${chatCount} 条新站内信`;
+      placeholder.appendChild(title);
+      LIST.appendChild(placeholder);
+    }
+  }
+
+  if (notifications.length) {
+    LIST.appendChild(makeSectionTitle("提醒"));
+    notifications.forEach((item) => {
+      const container = document.createElement("div");
+      container.className = "item";
+      container.addEventListener("click", () => openItem(item, container));
+
+      const title = document.createElement("div");
+      title.className = "title";
+      title.textContent = item.subject || "查看详情";
+
+      const summary = document.createElement("div");
+      summary.className = "summary";
+      summary.textContent = sliceText(stripHtml(item.summary || item.html_message || ""), 120);
+
+      const closeBtn = document.createElement("button");
+      closeBtn.className = "read-btn";
+      closeBtn.textContent = "×";
+      closeBtn.title = "标记已读";
+      closeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        markRead(item, container);
+      });
+
+      container.appendChild(title);
+      container.appendChild(summary);
+      container.appendChild(closeBtn);
+      LIST.appendChild(container);
+    });
+  }
+
+  if (!LIST.children.length) {
+    setStatus("暂无未读消息");
+    chrome.runtime.sendMessage({ type: "clearBadge" }, () => {});
+  } else {
+    // 有未读则确保徽标存在
+    chrome.runtime.sendMessage({ type: "ensureBadge" }, () => {});
+  }
+}
+
+function setStatus(text, isError = false) {
+  STATUS.textContent = text;
+  STATUS.className = isError ? "error" : "";
+}
+
+function stripHtml(html) {
+  const div = document.createElement("div");
+  div.innerHTML = html;
+  return div.textContent || "";
+}
+
+function sliceText(text, max = 120) {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max)}…`;
+}
+
+function formatDate(ts) {
+  if (!ts) return "";
+  const d = new Date(ts * 1000);
+  return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours().toString().padStart(2, "0")}:${d
+    .getMinutes()
+    .toString()
+    .padStart(2, "0")}`;
+}
+
+async function markRead(item, container) {
+  try {
+    const { ok, error } = await chrome.runtime.sendMessage({
+      type: "markRead",
+      id: item.id,
+      kind: item.kind,
+    });
+    if (!ok) throw new Error(error || "mark read failed");
+    container.remove();
+    if (!LIST.children.length) {
+      setStatus("暂无未读消息");
+      chrome.runtime.sendMessage({ type: "clearBadge" }, () => {});
+    }
+  } catch (error) {
+    console.error(error);
+    setStatus("标记失败，请稍后再试。", true);
+  }
+}
+
+async function openItem(item, container) {
+  await markRead(item, container);
+  const useOld = currentVersion === "old";
+
+  const url =
+    item.kind === "report" || /有新的举报等待处理/.test(item.summary || item.html_message || "")
+      ? "https://bbs.uestc.edu.cn/forum.php?mod=modcp&action=report"
+      : item.thread_id
+      ? useOld
+        ? THREAD_URL_OLD(item.thread_id)
+        : THREAD_URL_NEW(item.thread_id)
+      : useOld
+      ? FALLBACK_URL_OLD
+      : FALLBACK_URL_NEW;
+  chrome.tabs.create({ url });
+  window.close();
+}
+
+function openChat() {
+  const useOld = currentVersion === "old";
+  const url = useOld ? CHAT_URL_OLD : CHAT_URL_NEW;
+  chrome.tabs.create({ url });
+  window.close();
+}
+
+async function openHome() {
+  try {
+    const url = currentVersion === "old" ? "https://bbs.uestc.edu.cn/forum.php" : "https://bbs.uestc.edu.cn/new";
+    chrome.tabs.create({ url });
+    window.close();
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+function makeSectionTitle(text) {
+  const div = document.createElement("div");
+  div.className = "section-title";
+  div.textContent = text;
+  return div;
+}

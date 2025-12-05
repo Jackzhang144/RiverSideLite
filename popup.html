@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>清水河畔助手</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 10px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+        background: #f7f7f7;
+        color: #333;
+        width: 360px;
+        min-height: 100px;
+      }
+      h1 {
+        font-size: 16px;
+        margin: 0 0 8px 0;
+      }
+      #status {
+        font-size: 13px;
+        color: #666;
+        margin-bottom: 8px;
+      }
+      .list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .item {
+        position: relative;
+        padding: 10px;
+        border-radius: 8px;
+        background: #fff;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+        cursor: pointer;
+        border: 1px solid #eee;
+      }
+      .item:hover {
+        border-color: #d0e3ff;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+      }
+      .title {
+        font-size: 14px;
+        font-weight: 600;
+        margin: 0 24px 4px 0;
+        color: #1a5dab;
+      }
+      .summary {
+        font-size: 13px;
+        color: #333;
+        line-height: 1.4;
+      }
+      .section-title {
+        font-size: 12px;
+        color: #555;
+        margin: 6px 0 4px;
+      }
+      .read-btn {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        width: 20px;
+        height: 20px;
+        border: none;
+        border-radius: 50%;
+        background: #f3f3f3;
+        color: #666;
+        cursor: pointer;
+        font-weight: bold;
+      }
+      .read-btn:hover {
+        background: #ffe4e4;
+        color: #b20000;
+      }
+      .empty {
+        text-align: center;
+        font-size: 13px;
+        color: #666;
+        padding: 12px 0;
+      }
+      .error {
+        color: #b20000;
+      }
+      .footer {
+        margin-top: 10px;
+        text-align: right;
+      }
+      .btn {
+        display: inline-block;
+        padding: 6px 12px;
+        border: 1px solid #1a5dab;
+        border-radius: 6px;
+        background: #1a5dab;
+        color: #fff;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      .btn:hover {
+        background: #0f4b8d;
+        border-color: #0f4b8d;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>未读消息</h1>
+    <div id="status">加载中...</div>
+    <div id="list" class="list"></div>
+    <div class="footer">
+      <button id="homeBtn" class="btn">返回首页</button>
+    </div>
+    <script src="popup.js"></script>
+  </body>
+</html>
