@@ -7,8 +7,8 @@ const THREAD_URL_OLD = (threadId) =>
   `https://bbs.uestc.edu.cn/forum.php?mod=viewthread&tid=${threadId}`;
 const FALLBACK_URL_NEW = "https://bbs.uestc.edu.cn/messages/posts";
 const FALLBACK_URL_OLD = "https://bbs.uestc.edu.cn/home.php?mod=space&do=notice";
-const CHAT_URL_NEW = "https://bbs.uestc.edu.cn/messages/chat";
-const CHAT_URL_OLD = "https://bbs.uestc.edu.cn/home.php?mod=space&do=pm";
+const CHAT_URL_NEW_BASE = "https://bbs.uestc.edu.cn/messages/chat";
+const CHAT_URL_OLD_BASE = "https://bbs.uestc.edu.cn/home.php?mod=space&do=pm";
 let currentVersion = "new";
 
 init();
@@ -59,7 +59,7 @@ function renderLists(notifications, chats, chatCount) {
       chats.forEach((chat) => {
         const container = document.createElement("div");
         container.className = "item";
-        container.addEventListener("click", () => openChat());
+        container.addEventListener("click", () => openChat(chat));
         const title = document.createElement("div");
         title.className = "title";
         const author = chat.to_username || chat.last_author || "";
@@ -160,6 +160,9 @@ async function markRead(item, container) {
     if (!LIST.children.length) {
       setStatus("暂无未读消息");
       chrome.runtime.sendMessage({ type: "clearBadge" }, () => {});
+    } else {
+      // 读完后立刻刷新徽标计数
+      chrome.runtime.sendMessage({ type: "ensureBadge" }, () => {});
     }
   } catch (error) {
     console.error(error);
@@ -170,6 +173,11 @@ async function markRead(item, container) {
 async function openItem(item, container) {
   await markRead(item, container);
   const useOld = currentVersion === "old";
+
+  if (isRateNotification(item)) {
+    // 评分提醒不跳转，只做已读清除
+    return;
+  }
 
   const url =
     item.kind === "report" || /有新的举报等待处理/.test(item.summary || item.html_message || "")
@@ -185,17 +193,47 @@ async function openItem(item, container) {
   window.close();
 }
 
-function openChat() {
-  const useOld = currentVersion === "old";
-  const url = useOld ? CHAT_URL_OLD : CHAT_URL_NEW;
+function isRateNotification(item) {
+  if (item?.kind === "rate") return true;
+  const text = stripHtml([item?.summary, item?.html_message, item?.subject].filter(Boolean).join(" "));
+  return /帖子.*被.*评分/.test(text);
+}
+
+function openChat(chat) {
+  // 新版接口暂不可用，统一跳转旧版私信页面
+  const url = buildLegacyChatUrl(chat);
   chrome.tabs.create({ url });
   window.close();
+}
+
+// 新版私信页面暂不可用，保留函数以便恢复时使用
+// function buildNewChatUrl(chat) {
+//   return chat?.conversation_id
+//     ? `${CHAT_URL_NEW_BASE}/${chat.conversation_id}`
+//     : CHAT_URL_NEW_BASE;
+// }
+
+function buildLegacyChatUrl(chat) {
+  if (chat?.to_uid) {
+    return `${CHAT_URL_OLD_BASE}&subop=view&touid=${chat.to_uid}#last`;
+  }
+  if (chat?.conversation_id) {
+    return `${CHAT_URL_OLD_BASE}&subop=view&plid=${chat.conversation_id}&type=1#last`;
+  }
+  return CHAT_URL_OLD_BASE;
 }
 
 async function openHome() {
   try {
     const url = currentVersion === "old" ? "https://bbs.uestc.edu.cn/forum.php" : "https://bbs.uestc.edu.cn/new";
-    chrome.tabs.create({ url });
+    const matched = await chrome.tabs.query({ url: `${url}*` });
+    if (matched.length && matched[0].id) {
+      const tab = matched[0];
+      await chrome.tabs.update(tab.id, { active: true });
+      await chrome.windows.update(tab.windowId, { focused: true });
+    } else {
+      await chrome.tabs.create({ url });
+    }
     window.close();
   } catch (error) {
     console.error(error);
