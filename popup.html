@@ -4,57 +4,87 @@
     <meta charset="UTF-8" />
     <title>清水河畔助手</title>
     <style>
+      :root {
+        --bg: #f7f7f7;
+        --card: #fff;
+        --primary: #1a5dab;
+        --primary-dark: #0f4b8d;
+        --border: #e3eaf5;
+        --shadow: 0 6px 18px rgba(0, 0, 0, 0.06);
+        --text: #333;
+        --muted: #666;
+      }
+      * {
+        box-sizing: border-box;
+      }
       body {
         margin: 0;
-        padding: 10px;
+        padding: 12px;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
-        background: #f7f7f7;
-        color: #333;
+        background: var(--bg);
+        color: var(--text);
         width: 360px;
         min-height: 100px;
-      }
-      h1 {
-        font-size: 16px;
-        margin: 0 0 8px 0;
-      }
-      #status {
-        font-size: 13px;
-        color: #666;
-        margin-bottom: 8px;
-      }
-      .list {
         display: flex;
         flex-direction: column;
         gap: 8px;
       }
+      h1 {
+        font-size: 16px;
+        margin: 0;
+        font-weight: 700;
+        color: var(--primary);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid var(--border);
+      }
+      #status {
+        font-size: 13px;
+        color: var(--muted);
+        margin: 0;
+        padding: 6px 0 2px;
+      }
+      .list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
       .item {
         position: relative;
         padding: 10px;
-        border-radius: 8px;
-        background: #fff;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+        border-radius: 10px;
+        background: var(--card);
+        box-shadow: var(--shadow);
         cursor: pointer;
-        border: 1px solid #eee;
+        border: 1px solid var(--border);
+        transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
       }
       .item:hover {
         border-color: #d0e3ff;
-        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+        transform: translateY(-1px);
+      }
+      .item:active {
+        transform: translateY(0);
       }
       .title {
         font-size: 14px;
         font-weight: 600;
         margin: 0 24px 4px 0;
-        color: #1a5dab;
+        color: var(--primary);
       }
       .summary {
         font-size: 13px;
-        color: #333;
-        line-height: 1.4;
+        color: var(--text);
+        line-height: 1.45;
       }
       .section-title {
         font-size: 12px;
-        color: #555;
-        margin: 6px 0 4px;
+        color: var(--muted);
+        margin: 2px 0 -2px;
+        letter-spacing: 0.02em;
       }
       .read-btn {
         position: absolute;
@@ -65,9 +95,10 @@
         border: none;
         border-radius: 50%;
         background: #f3f3f3;
-        color: #666;
+        color: var(--muted);
         cursor: pointer;
         font-weight: bold;
+        transition: background 120ms ease, color 120ms ease;
       }
       .read-btn:hover {
         background: #ffe4e4;
@@ -76,29 +107,36 @@
       .empty {
         text-align: center;
         font-size: 13px;
-        color: #666;
+        color: var(--muted);
         padding: 12px 0;
       }
       .error {
         color: #b20000;
       }
       .footer {
-        margin-top: 10px;
+        margin-top: auto;
         text-align: right;
+        padding-top: 8px;
+        border-top: 1px solid var(--border);
       }
       .btn {
         display: inline-block;
-        padding: 6px 12px;
-        border: 1px solid #1a5dab;
-        border-radius: 6px;
-        background: #1a5dab;
+        padding: 7px 14px;
+        border: 1px solid var(--primary);
+        border-radius: 7px;
+        background: var(--primary);
         color: #fff;
         font-size: 13px;
         cursor: pointer;
+        transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
       }
       .btn:hover {
-        background: #0f4b8d;
-        border-color: #0f4b8d;
+        background: var(--primary-dark);
+        border-color: var(--primary-dark);
+        transform: translateY(-1px);
+      }
+      .btn:active {
+        transform: translateY(0);
       }
     </style>
   </head>
