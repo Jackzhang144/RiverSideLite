@@ -22,7 +22,8 @@
     "scripting"
   ],
   "host_permissions": [
-    "*://bbs.uestc.edu.cn/*"
+    "*://bbs.uestc.edu.cn/*",
+    "https://api.chuckfang.com/*"
   ],
   "background": {
     "service_worker": "background.js"

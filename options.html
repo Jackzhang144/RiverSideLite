@@ -32,6 +32,23 @@
     .radio-group label {
       margin-bottom: 4px;
     }
+    .text-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .text-row span {
+      min-width: 80px;
+      color: #3c3c3c;
+    }
+    .text-row input[type="text"] {
+      flex: 1;
+      padding: 6px 8px;
+      border: 1px solid #d0d0d0;
+      border-radius: 6px;
+      font-size: 14px;
+    }
   </style>
 </head>
 <body>
@@ -57,6 +74,25 @@
       </label>
     </div>
     <p>选择新版或旧版 BBS 界面，将影响点击图标和通知后的跳转链接。</p>
+  </div>
+
+  <div class="setting-group">
+    <h1>MeoW 推送</h1>
+    <p>MeoW 是专为鸿蒙 5.0 及以上打造的消息提醒应用，使用系统级推送，无需后台常驻。</p>
+    <label>
+      <input type="checkbox" id="meowToggle">
+      启用 MeoW 推送
+    </label>
+    <div class="text-row">
+      <span>推送昵称</span>
+      <input type="text" id="meowNickname" placeholder="请输入在 MeoW 配置的昵称">
+    </div>
+    <p>开启后会在有新消息时通过 MeoW 推送提醒，昵称需与 App 中保持一致。</p>
+    <div class="text-row">
+      <span>测试推送</span>
+      <button id="meowTestBtn" type="button">发送测试</button>
+    </div>
+    <p id="meowTestStatus" style="padding-left:24px;margin-top:0;margin-bottom:0;color:#3c3c3c;"></p>
   </div>
 
   <script src="options.js"></script>

@@ -5,6 +5,11 @@ const API_BASE = "https://bbs.uestc.edu.cn/_";
 const SUMMARY_URL = `${API_BASE}/messages/summary`;
 const READ_URL = (id, kind) =>
   `${API_BASE}/messages/notifications/read/${id}${kind ? `?kind=${encodeURIComponent(kind)}` : ""}`;
+const MEO_W_BASE = "https://api.chuckfang.com";
+const THREAD_URL_NEW = (threadId) => `https://bbs.uestc.edu.cn/thread/${threadId}`;
+const THREAD_URL_OLD = (threadId) =>
+  `https://bbs.uestc.edu.cn/forum.php?mod=viewthread&tid=${threadId}`;
+const CHAT_URL_OLD_BASE = "https://bbs.uestc.edu.cn/home.php?mod=space&do=pm";
 
 const URLS = {
   new: {
@@ -22,6 +27,8 @@ const STATE_DEFAULTS = {
   notificationsEnabled: true,
   version: "new",
   authorizationHeader: "",
+  meowPushEnabled: false,
+  meowNickname: "",
 };
 
 let cachedState = { ...STATE_DEFAULTS };
@@ -41,6 +48,12 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   if (changes.authorizationHeader && typeof changes.authorizationHeader.newValue !== "undefined") {
     cachedState.authorizationHeader = changes.authorizationHeader.newValue || "";
   }
+  if (changes.meowPushEnabled && typeof changes.meowPushEnabled.newValue !== "undefined") {
+    cachedState.meowPushEnabled = Boolean(changes.meowPushEnabled.newValue);
+  }
+  if (changes.meowNickname && typeof changes.meowNickname.newValue !== "undefined") {
+    cachedState.meowNickname = changes.meowNickname.newValue || "";
+  }
 });
 
 chrome.runtime.onInstalled.addListener(() => { startup(); });
@@ -48,6 +61,7 @@ chrome.runtime.onStartup.addListener(() => { startup(); });
 
 async function startup() {
   await ensureStateLoaded();
+  await ensureMeowDefaultPersisted();
   setActionPopup();
   chrome.alarms.clearAll(() => {
     chrome.alarms.create("mainLoop", { periodInMinutes: CHECK_INTERVAL_MINUTES });
@@ -76,41 +90,16 @@ async function checkStatus() {
   try {
     await ensureStateLoaded();
     const previousTotal = cachedState.lastTotal;
-    const htmlRes = await fetch(CHECK_URL, {
-      credentials: 'include',
-      cache: 'no-store',
-      headers: {
-        'X-Uestc-Bbs': '1',
-        'Referer': BBS_ROOT
-      }
-    });
-
-    if (!htmlRes.ok) {
-      updateBadge("?", "#999999");
-      return;
-    }
-
-    const htmlText = await htmlRes.text();
-
-    if (!htmlText.includes("action=logout")) {
-      updateBadge("未登录", "#999999");
-      return;
-    }
-
-    let promptCount = 0;
-    let pmCount = 0;
-
-    const promptMatch = htmlText.match(/id="myprompt"[^>]*>.*?\((\d+)\)/);
-    if (promptMatch && promptMatch[1]) {
-      promptCount = parseInt(promptMatch[1]);
-    }
-
-    const pmHasNew = /id="pm_ntc"[^>]*class="[^"]*\bnew\b"/.test(htmlText);
-    if (pmHasNew) {
-      pmCount = 1;
-    }
-
-    const total = promptCount + pmCount;
+    const summary = await fetchSummaryApi();
+    const payload = summary?.data && summary.code !== undefined ? summary.data : summary;
+    const chat = payload?.new_messages?.chat || 0;
+    const postsObj = payload?.new_messages?.posts || {};
+    const notice = Object.values(postsObj).reduce(
+      (acc, val) => acc + (typeof val === "number" ? val : 0),
+      0
+    );
+    const total = chat + notice;
+    log("checkStatus summary counts", { total, notice, chat });
 
     if (total > 0) {
       updateBadge(total.toString(), "#00FF00");
@@ -119,12 +108,16 @@ async function checkStatus() {
     }
 
     setActionPopup();
-    await maybeNotify(total, promptCount, pmCount, previousTotal);
+    await maybeNotify(total, notice, chat, previousTotal, payload);
     await persistState({ ...cachedState, lastTotal: total });
 
   } catch (error) {
     console.error(error);
-    updateBadge("ERR", "#FF0000");
+    if ((error?.message || "").includes("401")) {
+      updateBadge("未登录", "#999999");
+    } else {
+      updateBadge("ERR", "#FF0000");
+    }
   }
 }
 
@@ -179,6 +172,13 @@ async function ensureStateLoaded() {
   stateReady = true;
 }
 
+async function ensureMeowDefaultPersisted() {
+  const { meowPushEnabled } = await chrome.storage.local.get(["meowPushEnabled"]);
+  if (typeof meowPushEnabled === "undefined") {
+    await chrome.storage.local.set({ meowPushEnabled: false });
+  }
+}
+
 async function persistState(nextState) {
   cachedState = nextState;
   await chrome.storage.local.set(nextState);
@@ -191,18 +191,32 @@ async function clearCountsAndBadge() {
   setActionPopup();
 }
 
-async function maybeNotify(total, promptCount, pmCount, previousTotal) {
-  if (total <= 0 || total === previousTotal || !cachedState.notificationsEnabled) {
+async function maybeNotify(total, promptCount, pmCount, previousTotal, payload) {
+  if (total <= 0 || total === previousTotal) {
+    return;
+  }
+
+  const shouldPushMeow = cachedState.meowPushEnabled && Boolean((cachedState.meowNickname || "").trim());
+  const shouldShowNotification = cachedState.notificationsEnabled;
+
+  if (!shouldPushMeow && !shouldShowNotification) {
+    log("notify skipped: both system notification and MeoW disabled");
     return;
   }
 
   let message = buildNotifyFallback(promptCount, pmCount);
+  const version = cachedState.version === "old" ? "old" : "new";
+  let effectivePayload = payload;
 
   try {
-    const summary = await fetchSummaryApi();
-    const payload = summary?.data && summary.code !== undefined ? summary.data : summary;
-    const items = Array.isArray(payload?.new_notifications) ? payload.new_notifications : [];
-    const chats = Array.isArray(payload?.new_chats) ? payload.new_chats : [];
+    if (!effectivePayload) {
+      const summary = await fetchSummaryApi();
+      effectivePayload = summary?.data && summary.code !== undefined ? summary.data : summary;
+    }
+    const items = Array.isArray(effectivePayload?.new_notifications)
+      ? effectivePayload.new_notifications
+      : [];
+    const chats = Array.isArray(effectivePayload?.new_chats) ? effectivePayload.new_chats : [];
 
     const lines = [];
     if (items.length) {
@@ -230,6 +244,19 @@ async function maybeNotify(total, promptCount, pmCount, previousTotal) {
     }
   } catch (error) {
     console.error("notify summary failed", error);
+  }
+
+  const meowTarget = buildMeowTarget(effectivePayload, version);
+  const meowPayloads = buildMeowPayloads(effectivePayload, version, message, meowTarget);
+
+  if (shouldPushMeow) {
+    for (const entry of meowPayloads) {
+      await maybeSendMeowPush(entry.text, total, { targetUrl: entry.target });
+    }
+  }
+
+  if (!shouldShowNotification) {
+    return;
   }
 
   chrome.notifications.create(`riverside-${Date.now()}`, {
@@ -264,6 +291,51 @@ function buildNotifyFallback(promptCount, pmCount) {
   return parts.join("，") || "收到新的站内消息";
 }
 
+async function maybeSendMeowPush(message, total, options = {}) {
+  const { force = false, targetUrl } = options;
+  if (!force && !cachedState.meowPushEnabled) {
+    log("MeoW push skipped: disabled");
+    return;
+  }
+  const nickname = (cachedState.meowNickname || "").trim();
+  if (!nickname) {
+    log("MeoW push skipped: empty nickname");
+    return;
+  }
+
+  const content = message || "收到新的站内消息";
+  const title = total > 0 ? `清水河畔 ${total} 条新提醒` : "清水河畔助手提醒";
+  const version = cachedState.version === "old" ? "old" : "new";
+  const finalTarget = targetUrl || URLS[version].messages;
+  const endpoint = new URL(`${MEO_W_BASE}/${encodeURIComponent(nickname)}/${encodeURIComponent(title)}`);
+  endpoint.searchParams.set("msgType", "text");
+  const body = new URLSearchParams();
+  body.set("title", title);
+  body.set("msg", content);
+  body.set("url", finalTarget);
+
+  try {
+    log("MeoW push request", {
+      endpoint: endpoint.toString(),
+      title,
+      targetUrl: finalTarget,
+      contentLength: content.length,
+    });
+    const res = await fetch(endpoint.toString(), {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+    });
+    if (!res.ok) {
+      log("MeoW push failed", res.status);
+    } else {
+      log("MeoW push success", res.status);
+    }
+  } catch (error) {
+    console.error("MeoW push error", error);
+  }
+}
+
 function normalizeText(raw) {
   if (!raw) return "";
   return raw.replace(/&nbsp;?/gi, " ").replace(/\u00a0/g, " ").trim();
@@ -273,6 +345,109 @@ function stripHtml(raw) {
   if (!raw) return "";
   const text = raw.replace(/<[^>]+>/g, " ");
   return normalizeText(text);
+}
+
+function buildMeowTarget(payload, version) {
+  const fallback = version === "old" ? URLS.old.messages : URLS.new.messages;
+  if (!payload) return fallback;
+  const items = Array.isArray(payload?.new_notifications) ? payload.new_notifications : [];
+  const chats = Array.isArray(payload?.new_chats) ? payload.new_chats : [];
+
+  const firstNotification = items.find(
+    (item) => !isRateNotification(item) && !isTaskCompletionNotification(item)
+  );
+  if (firstNotification) {
+    const url = buildNotificationTarget(firstNotification, version, fallback);
+    if (url) return url;
+  }
+
+  if (chats.length) {
+    return buildLegacyChatUrl(chats[0]);
+  }
+
+  if (payload?.new_messages?.chat) {
+    return buildLegacyChatUrl();
+  }
+
+  return fallback;
+}
+
+function buildNotificationTarget(item, version, fallback) {
+  if (!item) return fallback;
+  if (isRateNotification(item) || isTaskCompletionNotification(item)) return "";
+  const summaryText = stripHtml([item?.summary, item?.html_message, item?.subject].filter(Boolean).join(" "));
+  if (item.kind === "report" || /有新的举报等待处理/.test(summaryText)) {
+    return "https://bbs.uestc.edu.cn/forum.php?mod=modcp&action=report";
+  }
+  if (item.thread_id) {
+    return version === "old" ? THREAD_URL_OLD(item.thread_id) : THREAD_URL_NEW(item.thread_id);
+  }
+  return fallback;
+}
+
+function buildMeowPayloads(payload, version, fallbackText, fallbackTarget) {
+  const fallback = fallbackTarget || (version === "old" ? URLS.old.messages : URLS.new.messages);
+  const results = [];
+  if (payload) {
+    const items = Array.isArray(payload?.new_notifications) ? payload.new_notifications : [];
+    const chats = Array.isArray(payload?.new_chats) ? payload.new_chats : [];
+
+    items.forEach((item) => {
+      const target = buildNotificationTarget(item, version, fallback);
+      if (!target) return;
+      const title = normalizeText(item.subject || item.summary || "提醒");
+      const body = stripHtml(item.summary || item.html_message || "");
+      const text = [title, body].filter(Boolean).join(" - ").slice(0, 140) || "收到新的提醒";
+      results.push({ text, target });
+    });
+
+    chats.forEach((chat) => {
+      const target = buildLegacyChatUrl(chat);
+      const title = normalizeText(chat.subject || chat.to_username || chat.last_author || "站内信");
+      const body = stripHtml(chat.last_summary || "");
+      const text = [title, body].filter(Boolean).join(" - ").slice(0, 140) || "收到新的站内信";
+      results.push({ text, target });
+    });
+  }
+
+  if (!results.length) {
+    results.push({ text: fallbackText || "收到新的站内消息", target: fallback });
+  }
+
+  return results;
+}
+
+function isRateNotification(item) {
+  if (item?.kind === "rate") return true;
+  const text = stripHtml([item?.summary, item?.html_message, item?.subject].filter(Boolean).join(" "));
+  return /帖子.*被.*评分/.test(text);
+}
+
+function isTaskCompletionNotification(item) {
+  const text = stripHtml([item?.subject, item?.summary, item?.html_message].filter(Boolean).join(" "));
+  return text.includes("恭喜您完成任务");
+}
+
+function buildLegacyChatUrl(chat) {
+  if (chat?.to_uid) {
+    return `${CHAT_URL_OLD_BASE}&subop=view&touid=${chat.to_uid}#last`;
+  }
+  if (chat?.conversation_id) {
+    return `${CHAT_URL_OLD_BASE}&subop=view&plid=${chat.conversation_id}&type=1#last`;
+  }
+  return CHAT_URL_OLD_BASE;
+}
+
+async function sendMeowTest() {
+  await ensureStateLoaded();
+  const nickname = (cachedState.meowNickname || "").trim();
+  if (!nickname) {
+    throw new Error("请先填写 MeoW 昵称");
+  }
+  log("MeoW test push start");
+  const content = "这是一条 MeoW 测试推送，来自清水河畔助手。";
+  await maybeSendMeowPush(content, 1, { force: true });
+  return true;
 }
 
 async function openOrFocusUrl(targetUrl) {
@@ -318,6 +493,15 @@ chrome.runtime.onMessage.addListener((message, _, sendResponse) => {
   if (message?.type === "ensureBadge") {
     ensureBadge()
       .then(() => sendResponse({ ok: true }))
+      .catch((error) => {
+        console.error(error);
+        sendResponse({ ok: false, error: error?.message || "unknown" });
+      });
+    return true;
+  }
+  if (message?.type === "sendMeowTest") {
+    sendMeowTest()
+      .then((ok) => sendResponse({ ok }))
       .catch((error) => {
         console.error(error);
         sendResponse({ ok: false, error: error?.message || "unknown" });
