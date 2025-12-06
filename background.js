@@ -221,11 +221,7 @@ async function maybeNotify(total, promptCount, pmCount, previousTotal, payload) 
     const lines = [];
     if (items.length) {
       lines.push(
-        ...items.slice(0, 3).map((item) => {
-          const title = normalizeText(item.subject || item.summary || "");
-          const body = stripHtml(item.summary || item.html_message || "");
-          return [title, body].filter(Boolean).join(" - ").slice(0, 140);
-        })
+        ...items.slice(0, 3).map((item) => buildNotificationText(item))
       );
     }
     if (chats.length) {
@@ -347,6 +343,13 @@ function stripHtml(raw) {
   return normalizeText(text);
 }
 
+function buildNotificationText(item) {
+  if (!item) return "";
+  const body = stripHtml(item.summary || item.html_message || "");
+  const title = normalizeText(item.subject || item.summary || "提醒");
+  return (body || title).slice(0, 140) || "收到新的提醒";
+}
+
 function buildMeowTarget(payload, version) {
   const fallback = version === "old" ? URLS.old.messages : URLS.new.messages;
   if (!payload) return fallback;
@@ -395,9 +398,7 @@ function buildMeowPayloads(payload, version, fallbackText, fallbackTarget) {
     items.forEach((item) => {
       const target = buildNotificationTarget(item, version, fallback);
       if (!target) return;
-      const title = normalizeText(item.subject || item.summary || "提醒");
-      const body = stripHtml(item.summary || item.html_message || "");
-      const text = [title, body].filter(Boolean).join(" - ").slice(0, 140) || "收到新的提醒";
+      const text = buildNotificationText(item);
       results.push({ text, target });
     });
 
