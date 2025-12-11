@@ -4,6 +4,8 @@ const HOME_BTN = document.getElementById("homeBtn");
 const OPTIONS_BTN = document.getElementById("btnOptions");
 const ACCOUNT_SELECT = document.getElementById("accountSelect");
 const ACCOUNT_SWITCH_BTN = document.getElementById("accountSwitchBtn");
+let activeAccountUsername = "";
+let currentVersion = "new";
 
 const THREAD_URL_NEW = (threadId) => `https://bbs.uestc.edu.cn/thread/${threadId}`;
 const THREAD_URL_OLD = (threadId) =>
@@ -14,23 +16,23 @@ const FALLBACK_URL_NEW = "https://bbs.uestc.edu.cn/messages/posts";
 const FALLBACK_URL_OLD = "https://bbs.uestc.edu.cn/home.php?mod=space&do=notice";
 const CHAT_URL_NEW_BASE = "https://bbs.uestc.edu.cn/messages/chat";
 const CHAT_URL_OLD_BASE = "https://bbs.uestc.edu.cn/home.php?mod=space&do=pm";
-let currentVersion = "new";
-
 HOME_BTN?.addEventListener("click", openHome);
 OPTIONS_BTN?.addEventListener("click", openOptions);
 ACCOUNT_SWITCH_BTN?.addEventListener("click", switchAccountFromPopup);
+ACCOUNT_SELECT?.addEventListener("change", () => updateSwitchButtonState());
 init();
 
 function init() {
   chrome.storage.local.get(
     { version: "new", accounts: [], activeUsername: "" },
     ({ version, accounts, activeUsername }) => {
-    currentVersion = version === "old" ? "old" : "new";
-      populateAccountSelect(accounts || [], activeUsername || "");
-    fetchSummary().catch((error) => {
-      console.error(error);
-      setStatus("加载失败，请检查是否已登录。", true);
-    });
+      currentVersion = version === "old" ? "old" : "new";
+      activeAccountUsername = activeUsername || "";
+      populateAccountSelect(accounts || [], activeAccountUsername);
+      fetchSummary().catch((error) => {
+        console.error(error);
+        setStatus("加载失败，请检查是否已登录。", true);
+      });
     }
   );
 }
@@ -239,11 +241,16 @@ async function openOptions() {
 }
 
 function populateAccountSelect(accounts, activeUsername = "") {
+  if (activeUsername) {
+    activeAccountUsername = activeUsername;
+  }
   if (!ACCOUNT_SELECT) return;
   ACCOUNT_SELECT.innerHTML = "";
   const placeholder = document.createElement("option");
   placeholder.value = "";
-  placeholder.textContent = "选择账号（可在选项页管理）";
+  placeholder.textContent = accounts.length ? "选择账号" : "选择账号（可在选项页管理）";
+  placeholder.disabled = Boolean(accounts.length);
+  placeholder.selected = true;
   ACCOUNT_SELECT.appendChild(placeholder);
   accounts.forEach((acc) => {
     const opt = document.createElement("option");
@@ -252,6 +259,7 @@ function populateAccountSelect(accounts, activeUsername = "") {
     if (acc.username === activeUsername) opt.selected = true;
     ACCOUNT_SELECT.appendChild(opt);
   });
+  updateSwitchButtonState();
 }
 
 async function switchAccountFromPopup() {
@@ -268,7 +276,9 @@ async function switchAccountFromPopup() {
     if (!res?.ok) throw new Error(res?.error || "切换失败");
     setAccountButtonState("切换成功", "#137333", true);
     setTimeout(() => {
+      activeAccountUsername = username;
       resetAccountButton();
+      updateSwitchButtonState();
     }, 2000);
   } catch (err) {
     setAccountButtonState("切换失败", "#b20000");
@@ -311,6 +321,23 @@ function resetAccountButton() {
   ACCOUNT_SWITCH_BTN.style.color = "";
   ACCOUNT_SWITCH_BTN.disabled = false;
   ACCOUNT_SWITCH_BTN.classList.remove("success");
+}
+
+function updateSwitchButtonState(activeUsername = activeAccountUsername) {
+  const selected = ACCOUNT_SELECT?.value || "";
+  if (selected && selected === activeUsername) {
+    ACCOUNT_SWITCH_BTN.disabled = true;
+    ACCOUNT_SWITCH_BTN.textContent = "已是当前";
+    ACCOUNT_SWITCH_BTN.style.background = "#e5e7eb";
+    ACCOUNT_SWITCH_BTN.style.borderColor = "#d0d3d8";
+    ACCOUNT_SWITCH_BTN.style.color = "#666";
+  } else {
+    ACCOUNT_SWITCH_BTN.disabled = false;
+    ACCOUNT_SWITCH_BTN.textContent = "切换";
+    ACCOUNT_SWITCH_BTN.style.background = "";
+    ACCOUNT_SWITCH_BTN.style.borderColor = "";
+    ACCOUNT_SWITCH_BTN.style.color = "";
+  }
 }
 
 function isRateNotification(item) {
