@@ -415,7 +415,7 @@ async function switchAccountLegacy(username, password) {
       activeUsername: targetUser,
     });
     await reloadBbsTabs();
-    await ensureBadge();
+    await checkStatus();
     return true;
   } catch (error) {
     await persistState({ ...cachedState, authorizationHeader: "", lastTotal: 0 });
