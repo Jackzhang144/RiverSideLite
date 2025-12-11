@@ -9,6 +9,8 @@ const MEO_W_BASE = "https://api.chuckfang.com";
 const THREAD_URL_NEW = (threadId) => `https://bbs.uestc.edu.cn/thread/${threadId}`;
 const THREAD_URL_OLD = (threadId) =>
   `https://bbs.uestc.edu.cn/forum.php?mod=viewthread&tid=${threadId}`;
+const THREAD_REDIRECT_OLD = (threadId, postId) =>
+  `https://bbs.uestc.edu.cn/forum.php?mod=redirect&goto=findpost&ptid=${threadId}&pid=${postId}`;
 const CHAT_URL_OLD_BASE = "https://bbs.uestc.edu.cn/home.php?mod=space&do=pm";
 
 const URLS = {
@@ -396,10 +398,8 @@ function buildNotificationTarget(item, version, fallback) {
   if (item.kind === "report" || /有新的举报等待处理/.test(summaryText)) {
     return "https://bbs.uestc.edu.cn/forum.php?mod=modcp&action=report";
   }
-  if (item.thread_id) {
-    return version === "old" ? THREAD_URL_OLD(item.thread_id) : THREAD_URL_NEW(item.thread_id);
-  }
-  return fallback;
+  const url = buildThreadUrl(item, version === "old");
+  return url || fallback;
 }
 
 function buildMeowPayloads(payload, version, fallbackText, fallbackTarget) {
@@ -430,6 +430,117 @@ function buildMeowPayloads(payload, version, fallbackText, fallbackTarget) {
   }
 
   return results;
+}
+
+function buildThreadUrl(item, useOld) {
+  const { threadId, postId, page } = extractThreadLocation(item);
+  if (!threadId) return useOld ? URLS.old.messages : URLS.new.messages;
+  if (useOld) {
+    if (postId) return THREAD_REDIRECT_OLD(threadId, postId);
+    return THREAD_URL_OLD(threadId);
+  }
+  const url = new URL(THREAD_URL_NEW(threadId));
+  if (page) url.searchParams.set("page", page);
+  if (postId) url.hash = `post-${postId}`;
+  return url.toString();
+}
+
+function extractThreadLocation(item) {
+  const threadId = toPositiveInt(
+    item?.thread_id || item?.tid || item?.threadId || item?.threadid || item?.topic_id
+  );
+  const postId = extractPostId(item);
+  const page = extractPageNumber(item);
+  const fromUrl = parseThreadUrl(
+    item?.url ||
+      item?.link ||
+      item?.href ||
+      item?.target_url ||
+      item?.targetUrl ||
+      item?.notification_url ||
+      item?.notificationUrl
+  );
+
+  return {
+    threadId: threadId || fromUrl.threadId,
+    postId: postId || fromUrl.postId,
+    page: page || fromUrl.page,
+  };
+}
+
+function parseThreadUrl(raw) {
+  if (!raw) return { threadId: null, postId: null, page: null };
+  try {
+    const url = new URL(raw, "https://bbs.uestc.edu.cn");
+    let threadId = null;
+    let postId = null;
+    let page = null;
+
+    const threadMatch = url.pathname.match(/\/thread\/(\d+)/);
+    if (threadMatch) {
+      threadId = toPositiveInt(threadMatch[1]);
+    }
+    if (url.pathname.includes("forum.php")) {
+      threadId = threadId || toPositiveInt(url.searchParams.get("tid") || url.searchParams.get("ptid"));
+    }
+    page = toPositiveInt(url.searchParams.get("page")) || null;
+    postId = toPositiveInt(url.searchParams.get("pid")) || postId;
+
+    if (url.hash) {
+      const hash = url.hash.replace(/^#/, "");
+      if (hash.startsWith("post-")) {
+        postId = toPositiveInt(hash.replace("post-", "")) || postId;
+      } else {
+        const pidMatch = hash.match(/pid(\d+)/);
+        if (pidMatch) {
+          postId = toPositiveInt(pidMatch[1]) || postId;
+        }
+      }
+    }
+
+    return { threadId, postId, page };
+  } catch (error) {
+    console.error("parseThreadUrl failed", error);
+    return { threadId: null, postId: null, page: null };
+  }
+}
+
+function extractPostId(item) {
+  const candidates = [
+    item?.post_id,
+    item?.pid,
+    item?.postId,
+    item?.postid,
+    item?.post?.id,
+    item?.post?.pid,
+  ];
+  for (const candidate of candidates) {
+    const num = toPositiveInt(candidate);
+    if (num) return num;
+  }
+  return null;
+}
+
+function extractPageNumber(item) {
+  const candidates = [
+    item?.post_page,
+    item?.page,
+    item?.page_no,
+    item?.page_num,
+    item?.pageNumber,
+    item?.page_index,
+    item?.post?.page,
+  ];
+  for (const candidate of candidates) {
+    const num = toPositiveInt(candidate);
+    if (num) return num;
+  }
+  return null;
+}
+
+function toPositiveInt(value) {
+  const num = Number(value);
+  return Number.isInteger(num) && num > 0 ? num : null;
 }
 
 function isRateNotification(item) {

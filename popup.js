@@ -5,6 +5,8 @@ const HOME_BTN = document.getElementById("homeBtn");
 const THREAD_URL_NEW = (threadId) => `https://bbs.uestc.edu.cn/thread/${threadId}`;
 const THREAD_URL_OLD = (threadId) =>
   `https://bbs.uestc.edu.cn/forum.php?mod=viewthread&tid=${threadId}`;
+const THREAD_REDIRECT_OLD = (threadId, postId) =>
+  `https://bbs.uestc.edu.cn/forum.php?mod=redirect&goto=findpost&ptid=${threadId}&pid=${postId}`;
 const FALLBACK_URL_NEW = "https://bbs.uestc.edu.cn/messages/posts";
 const FALLBACK_URL_OLD = "https://bbs.uestc.edu.cn/home.php?mod=space&do=notice";
 const CHAT_URL_NEW_BASE = "https://bbs.uestc.edu.cn/messages/chat";
@@ -213,16 +215,7 @@ async function openItem(item, container) {
     return;
   }
 
-  const url =
-    item.kind === "report" || /有新的举报等待处理/.test(item.summary || item.html_message || "")
-      ? "https://bbs.uestc.edu.cn/forum.php?mod=modcp&action=report"
-      : item.thread_id
-      ? useOld
-        ? THREAD_URL_OLD(item.thread_id)
-        : THREAD_URL_NEW(item.thread_id)
-      : useOld
-      ? FALLBACK_URL_OLD
-      : FALLBACK_URL_NEW;
+  const url = buildNotificationTarget(item, useOld);
   chrome.tabs.create({ url });
   window.close();
 }
@@ -312,4 +305,124 @@ function renderForbiddenNotice() {
     chrome.tabs.create({ url: proxyUrl });
     window.close();
   });
+}
+
+function buildNotificationTarget(item, useOld) {
+  if (!item) return useOld ? FALLBACK_URL_OLD : FALLBACK_URL_NEW;
+  const summaryText = stripHtml([item?.summary, item?.html_message, item?.subject].filter(Boolean).join(" "));
+  if (item.kind === "report" || /有新的举报等待处理/.test(summaryText)) {
+    return "https://bbs.uestc.edu.cn/forum.php?mod=modcp&action=report";
+  }
+  return buildThreadUrl(item, useOld);
+}
+
+function buildThreadUrl(item, useOld) {
+  const { threadId, postId, page } = extractThreadLocation(item);
+  if (!threadId) return useOld ? FALLBACK_URL_OLD : FALLBACK_URL_NEW;
+  if (useOld) {
+    if (postId) return THREAD_REDIRECT_OLD(threadId, postId);
+    return THREAD_URL_OLD(threadId);
+  }
+  const url = new URL(THREAD_URL_NEW(threadId));
+  if (page) url.searchParams.set("page", page);
+  if (postId) url.hash = `post-${postId}`;
+  return url.toString();
+}
+
+function extractThreadLocation(item) {
+  const threadId = toPositiveInt(
+    item?.thread_id || item?.tid || item?.threadId || item?.threadid || item?.topic_id
+  );
+  const postId = extractPostId(item);
+  const page = extractPageNumber(item);
+  const fromUrl = parseThreadUrl(
+    item?.url ||
+      item?.link ||
+      item?.href ||
+      item?.target_url ||
+      item?.targetUrl ||
+      item?.notification_url ||
+      item?.notificationUrl
+  );
+
+  return {
+    threadId: threadId || fromUrl.threadId,
+    postId: postId || fromUrl.postId,
+    page: page || fromUrl.page,
+  };
+}
+
+function parseThreadUrl(raw) {
+  if (!raw) return { threadId: null, postId: null, page: null };
+  try {
+    const url = new URL(raw, "https://bbs.uestc.edu.cn");
+    let threadId = null;
+    let postId = null;
+    let page = null;
+
+    const threadMatch = url.pathname.match(/\/thread\/(\d+)/);
+    if (threadMatch) {
+      threadId = toPositiveInt(threadMatch[1]);
+    }
+    if (url.pathname.includes("forum.php")) {
+      threadId = threadId || toPositiveInt(url.searchParams.get("tid") || url.searchParams.get("ptid"));
+    }
+    page = toPositiveInt(url.searchParams.get("page")) || null;
+    postId = toPositiveInt(url.searchParams.get("pid")) || postId;
+
+    if (url.hash) {
+      const hash = url.hash.replace(/^#/, "");
+      if (hash.startsWith("post-")) {
+        postId = toPositiveInt(hash.replace("post-", "")) || postId;
+      } else {
+        const pidMatch = hash.match(/pid(\d+)/);
+        if (pidMatch) {
+          postId = toPositiveInt(pidMatch[1]) || postId;
+        }
+      }
+    }
+
+    return { threadId, postId, page };
+  } catch (error) {
+    console.error("parseThreadUrl failed", error);
+    return { threadId: null, postId: null, page: null };
+  }
+}
+
+function extractPostId(item) {
+  const candidates = [
+    item?.post_id,
+    item?.pid,
+    item?.postId,
+    item?.postid,
+    item?.post?.id,
+    item?.post?.pid,
+  ];
+  for (const candidate of candidates) {
+    const num = toPositiveInt(candidate);
+    if (num) return num;
+  }
+  return null;
+}
+
+function extractPageNumber(item) {
+  const candidates = [
+    item?.post_page,
+    item?.page,
+    item?.page_no,
+    item?.page_num,
+    item?.pageNumber,
+    item?.page_index,
+    item?.post?.page,
+  ];
+  for (const candidate of candidates) {
+    const num = toPositiveInt(candidate);
+    if (num) return num;
+  }
+  return null;
+}
+
+function toPositiveInt(value) {
+  const num = Number(value);
+  return Number.isInteger(num) && num > 0 ? num : null;
 }
