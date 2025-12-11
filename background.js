@@ -842,7 +842,7 @@ function base64ToUint8(str) {
 }
 
 let cachedCryptoKey = null;
-const KEY_BASE64 = "bW9jLXNpbXBsZS1rZXktMTIzNDU2Nzg="; // aes-128 key
+const KEY_BASE64 = "Uml2ZXJzaWRlTGl0ZUtleQ=="; // aes-128 key base64 of "RiversideLiteKey"
 async function getCryptoKey() {
   if (cachedCryptoKey) return cachedCryptoKey;
   const raw = base64ToUint8(KEY_BASE64);

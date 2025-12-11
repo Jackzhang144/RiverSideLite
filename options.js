@@ -15,6 +15,8 @@ const switchStatus = document.getElementById("switchStatus");
 const accountSaveBtn = document.getElementById("accountSaveBtn");
 const accountStatus = document.getElementById("accountStatus");
 const accountList = document.getElementById("accountList");
+const KEY_RAW = "RiversideLiteKey"; // 16-byte AES key
+let cachedCryptoKey = null;
 
 function sendMessagePromise(message) {
   return new Promise((resolve, reject) => {
@@ -289,7 +291,7 @@ function arrayBufferToBase64(buf) {
 
 async function getCryptoKey() {
   if (cachedCryptoKey) return cachedCryptoKey;
-  const raw = Uint8Array.from(atob(KEY_BASE64), (c) => c.charCodeAt(0));
+  const raw = new TextEncoder().encode(KEY_RAW);
   cachedCryptoKey = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
   return cachedCryptoKey;
 }
