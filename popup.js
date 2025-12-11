@@ -219,7 +219,7 @@ async function openItem(item, container) {
   }
 
   const url = buildNotificationTarget(item, useOld);
-  chrome.tabs.create({ url });
+  await openOrFocusUrl(url);
   window.close();
 }
 
@@ -280,6 +280,23 @@ async function openHome() {
     window.close();
   } catch (error) {
     console.error(error);
+  }
+}
+
+async function openOrFocusUrl(targetUrl) {
+  if (!targetUrl) return;
+  try {
+    const tabs = await chrome.tabs.query({ url: "*://bbs.uestc.edu.cn/*" });
+    if (tabs.length) {
+      const tab = tabs[0];
+      await chrome.tabs.update(tab.id, { active: true, url: targetUrl });
+      await chrome.windows.update(tab.windowId, { focused: true });
+      return;
+    }
+    await chrome.tabs.create({ url: targetUrl });
+  } catch (error) {
+    console.error("openOrFocusUrl failed", error);
+    await chrome.tabs.create({ url: targetUrl });
   }
 }
 
