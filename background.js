@@ -407,7 +407,8 @@ async function maybeSendMeowPush(message, total, options = {}) {
 
 function normalizeText(raw) {
   if (!raw) return "";
-  return raw.replace(/&nbsp;?/gi, " ").replace(/\u00a0/g, " ").trim();
+  const decoded = decodeEntities(raw);
+  return decoded.replace(/&nbsp;?/gi, " ").replace(/\u00a0/g, " ").trim();
 }
 
 function stripHtml(raw) {
@@ -633,6 +634,30 @@ function extractPageNumber(item) {
 function toPositiveInt(value) {
   const num = Number(value);
   return Number.isInteger(num) && num > 0 ? num : null;
+}
+
+function decodeEntities(text) {
+  if (!text) return "";
+  const map = {
+    amp: "&",
+    lt: "<",
+    gt: ">",
+    quot: "\"",
+    apos: "'",
+    nbsp: " ",
+  };
+  return text.replace(/&(#x?[0-9a-fA-F]+|\w+);/g, (_, entity) => {
+    if (entity in map) return map[entity];
+    if (entity.startsWith("#x") || entity.startsWith("#X")) {
+      const code = parseInt(entity.slice(2), 16);
+      return Number.isFinite(code) ? String.fromCharCode(code) : "";
+    }
+    if (entity.startsWith("#")) {
+      const code = parseInt(entity.slice(1), 10);
+      return Number.isFinite(code) ? String.fromCharCode(code) : "";
+    }
+    return "";
+  });
 }
 
 function isRateNotification(item) {

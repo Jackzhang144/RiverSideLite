@@ -157,7 +157,8 @@ function extractStatusCode(raw) {
 }
 
 function normalizeText(text) {
-  return (text || "").replace(/&nbsp;?/gi, " ").replace(/\u00a0/g, " ").trim();
+  const decoded = decodeEntities(text || "");
+  return decoded.replace(/&nbsp;?/gi, " ").replace(/\u00a0/g, " ").trim();
 }
 
 function stripHtml(html) {
@@ -351,6 +352,30 @@ function buildGotoUrl(threadId, postId) {
   if (!postId) return threadId ? `${base}/thread/${threadId}` : base;
   if (threadId) return `${base}/goto/${threadId}/${postId}`;
   return `${base}/goto/${postId}`;
+}
+
+function decodeEntities(text) {
+  if (!text) return "";
+  const map = {
+    amp: "&",
+    lt: "<",
+    gt: ">",
+    quot: "\"",
+    apos: "'",
+    nbsp: " ",
+  };
+  return text.replace(/&(#x?[0-9a-fA-F]+|\w+);/g, (_, entity) => {
+    if (entity in map) return map[entity];
+    if (entity.startsWith("#x") || entity.startsWith("#X")) {
+      const code = parseInt(entity.slice(2), 16);
+      return Number.isFinite(code) ? String.fromCharCode(code) : "";
+    }
+    if (entity.startsWith("#")) {
+      const code = parseInt(entity.slice(1), 10);
+      return Number.isFinite(code) ? String.fromCharCode(code) : "";
+    }
+    return "";
+  });
 }
 
 function extractThreadLocation(item) {
