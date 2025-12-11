@@ -275,8 +275,13 @@ async function switchAccountFromPopup() {
     const res = await sendMessagePromise({ type: "switchAccount", username });
     if (!res?.ok) throw new Error(res?.error || "切换失败");
     setAccountButtonState("切换成功", "#137333", true);
+    activeAccountUsername = username;
+    try {
+      await fetchSummary();
+    } catch (error) {
+      console.error("refresh after switch failed", error);
+    }
     setTimeout(() => {
-      activeAccountUsername = username;
       resetAccountButton();
       updateSwitchButtonState();
     }, 2000);
