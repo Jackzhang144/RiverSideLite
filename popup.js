@@ -8,10 +8,14 @@ const CAPTCHA_PANEL = document.getElementById("captchaPanel");
 const CAPTCHA_IMG = document.getElementById("popupCaptchaImg");
 const CAPTCHA_INPUT = document.getElementById("popupCaptchaInput");
 const CAPTCHA_REFRESH = document.getElementById("popupCaptchaRefresh");
+const ACCOUNT_CACHE_KEY = "popupAccountsCache";
 let activeAccountUsername = "";
 let cachedAccounts = [];
 let popupCaptchaHash = "";
 let currentVersion = "new";
+let lastSummaryCache = null;
+let fetchSummaryPromise = null;
+let lastFetchTs = 0;
 const uiLog = (...args) => {
   const ts = new Date().toISOString();
   console.log(`[RiversideLite][popup][${ts}]`, ...args);
@@ -34,19 +38,69 @@ ACCOUNT_SELECT?.addEventListener("change", () => updateSwitchButtonState());
 init();
 
 function init() {
-  chrome.storage.local.get(STORAGE_DEFAULTS, ({ version, accounts, activeUsername }) => {
+  const sessionAccounts = readAccountsSession();
+  if (sessionAccounts?.accounts?.length) {
+    activeAccountUsername = sessionAccounts.activeUsername || activeAccountUsername;
+    populateAccountSelect(sessionAccounts.accounts, activeAccountUsername);
+  }
+
+  chrome.storage.local.get(STORAGE_DEFAULTS, ({ version, accounts, activeUsername, lastSummaryCache: cache }) => {
     currentVersion = version === "old" ? "old" : "new";
-    activeAccountUsername = activeUsername || "";
-    uiLog("init storage loaded", { version: currentVersion, activeAccountUsername });
+    activeAccountUsername = activeUsername || activeAccountUsername;
+    lastSummaryCache = cache || null;
+    uiLog("init storage loaded", { version: currentVersion, activeAccountUsername, hasCache: Boolean(lastSummaryCache) });
+    if (lastSummaryCache?.notifications || lastSummaryCache?.chats) {
+      renderData(lastSummaryCache, true);
+      setStatus("使用缓存，正在刷新...");
+    }
     populateAccountSelect(accounts || [], activeAccountUsername);
-    fetchSummary().catch((error) => {
+    fetchSummaryThrottled(true).catch((error) => {
       console.error(error);
       setStatus("加载失败，请检查是否已登录。", true);
     });
   });
 }
 
-async function fetchSummary() {
+function readAccountsSession() {
+  try {
+    const raw = sessionStorage.getItem(ACCOUNT_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (error) {
+    console.warn("readAccountsSession failed", error);
+    return null;
+  }
+}
+
+function saveAccountsSession(accounts, activeUsername) {
+  try {
+    sessionStorage.setItem(ACCOUNT_CACHE_KEY, JSON.stringify({ accounts, activeUsername }));
+  } catch (error) {
+    console.warn("saveAccountsSession failed", error);
+  }
+}
+
+async function fetchSummaryThrottled(force = false) {
+  const now = Date.now();
+  if (!force && fetchSummaryPromise) {
+    uiLog("fetchSummary throttled: in flight");
+    return fetchSummaryPromise;
+  }
+  if (!force && now - lastFetchTs < 2000) {
+    uiLog("fetchSummary throttled: too frequent");
+    return Promise.resolve(null);
+  }
+  fetchSummaryPromise = fetchSummaryInternal()
+    .catch((err) => {
+      throw err;
+    })
+    .finally(() => {
+      fetchSummaryPromise = null;
+      lastFetchTs = Date.now();
+    });
+  return fetchSummaryPromise;
+}
+
+async function fetchSummaryInternal() {
   setStatus("加载中...");
   uiLog("fetchSummary start");
   const { ok, data, error, status } = await chrome.runtime.sendMessage({
@@ -62,7 +116,12 @@ async function fetchSummary() {
       renderForbiddenNotice();
       return;
     }
-    setStatus(code ? `加载失败（${code}）` : "加载失败，请稍后重试。", true);
+    if (lastSummaryCache) {
+      renderData(lastSummaryCache, true);
+      setStatus("使用缓存数据，可能有延迟。", true);
+    } else {
+      setStatus(code ? `加载失败（${code}）` : "加载失败，请稍后重试。", true);
+    }
     return;
   }
 
@@ -86,29 +145,52 @@ async function fetchSummary() {
     chats: chats.length,
     chatCount,
   });
-  renderLists(notifications, chats, chatCount);
+  const renderPayload = buildRenderData(notifications, chats, chatCount);
+  saveSummaryCache(renderPayload);
+  renderData(renderPayload);
 }
 
-function renderLists(notifications, chats, chatCount) {
+function buildRenderData(notifications, chats, chatCount) {
+  return {
+    notifications: notifications.map((item) => ({
+      item,
+      title: normalizeText(item.subject || "查看详情"),
+      summary: sliceText(stripHtml(item.summary || item.html_message || ""), 120),
+    })),
+    chats: chats.map((chat) => {
+      const author = normalizeText(chat.to_username || chat.last_author || "");
+      const subject = normalizeText(chat.subject || "查看站内信");
+      return {
+        chat,
+        title: [author, subject].filter(Boolean).join(" · "),
+        summary: sliceText(normalizeText(chat.last_summary || ""), 120),
+      };
+    }),
+    chatCount,
+  };
+}
+
+function renderData(renderData, fromCache = false) {
+  const notifications = Array.isArray(renderData?.notifications) ? renderData.notifications : [];
+  const chats = Array.isArray(renderData?.chats) ? renderData.chats : [];
+  const chatCount = renderData?.chatCount || 0;
   LIST.innerHTML = "";
-  setStatus("");
+  if (!fromCache) setStatus("");
   HOME_BTN?.classList.remove("hidden");
 
   if (chats.length || chatCount) {
     LIST.appendChild(makeSectionTitle("站内信"));
     if (chats.length) {
-      chats.forEach((chat) => {
+      chats.forEach((entry) => {
         const container = document.createElement("div");
         container.className = "item";
-        container.addEventListener("click", () => openChat(chat));
+        container.addEventListener("click", () => openChat(entry.chat));
         const title = document.createElement("div");
         title.className = "title";
-        const author = normalizeText(chat.to_username || chat.last_author || "");
-        const subject = normalizeText(chat.subject || "查看站内信");
-        title.textContent = [author, subject].filter(Boolean).join(" · ");
+        title.textContent = entry.title;
         const summary = document.createElement("div");
         summary.className = "summary";
-        summary.textContent = sliceText(normalizeText(chat.last_summary || ""), 120);
+        summary.textContent = entry.summary;
         container.appendChild(title);
         container.appendChild(summary);
         LIST.appendChild(container);
@@ -127,18 +209,18 @@ function renderLists(notifications, chats, chatCount) {
 
   if (notifications.length) {
     LIST.appendChild(makeSectionTitle("提醒"));
-    notifications.forEach((item) => {
+    notifications.forEach((entry) => {
       const container = document.createElement("div");
       container.className = "item";
-      container.addEventListener("click", () => openItem(item, container));
+      container.addEventListener("click", () => openItem(entry.item, container));
 
       const title = document.createElement("div");
       title.className = "title";
-      title.textContent = normalizeText(item.subject || "查看详情");
+      title.textContent = entry.title;
 
       const summary = document.createElement("div");
       summary.className = "summary";
-      summary.textContent = sliceText(stripHtml(item.summary || item.html_message || ""), 120);
+      summary.textContent = entry.summary;
 
       const closeBtn = document.createElement("button");
       closeBtn.className = "read-btn";
@@ -146,7 +228,7 @@ function renderLists(notifications, chats, chatCount) {
       closeBtn.title = "标记已读";
       closeBtn.addEventListener("click", (e) => {
         e.stopPropagation();
-        markRead(item, container);
+        markRead(entry.item, container);
       });
 
       container.appendChild(title);
@@ -260,6 +342,7 @@ function populateAccountSelect(accounts, activeUsername = "") {
   if (activeUsername) {
     activeAccountUsername = activeUsername;
   }
+  saveAccountsSession(cachedAccounts, activeAccountUsername);
   if (!ACCOUNT_SELECT) return;
   ACCOUNT_SELECT.innerHTML = "";
   const placeholder = document.createElement("option");
@@ -287,6 +370,17 @@ function refreshAccountSelect(activeUsername = activeAccountUsername) {
   uiLog("refreshAccountSelect from storage");
   chrome.storage.local.get({ accounts: [] }, ({ accounts }) => {
     populateAccountSelect(accounts || [], activeUsername);
+  });
+}
+
+function saveSummaryCache(notifications, chats, chatCount) {
+  chrome.storage.local.set({
+    lastSummaryCache: {
+      ts: Date.now(),
+      notifications,
+      chats,
+      chatCount,
+    },
   });
 }
 
@@ -370,7 +464,7 @@ async function switchAccountFromPopup() {
     activeAccountUsername = username;
     refreshAccountSelect(username);
     try {
-      await fetchSummary();
+      await fetchSummaryThrottled(true);
     } catch (error) {
       console.error("refresh after switch failed", error);
     }

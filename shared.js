@@ -6,6 +6,7 @@ const STORAGE_DEFAULTS = {
   meowLinkMode: "none",
   accounts: [],
   activeUsername: "",
+  lastSummaryCache: null, // 缓存最近一次弹窗摘要，提升首屏速度
 };
 
 function sendMessagePromise(message) {
