@@ -12,7 +12,10 @@ let activeAccountUsername = "";
 let cachedAccounts = [];
 let popupCaptchaHash = "";
 let currentVersion = "new";
-const uiLog = (...args) => console.log("[RiversideLite][popup]", ...args);
+const uiLog = (...args) => {
+  const ts = new Date().toISOString();
+  console.log(`[RiversideLite][popup][${ts}]`, ...args);
+};
 
 const THREAD_URL_NEW = (threadId) => `https://bbs.uestc.edu.cn/thread/${threadId}`;
 const THREAD_URL_OLD = (threadId) =>

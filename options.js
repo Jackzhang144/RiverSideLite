@@ -22,7 +22,10 @@ const captchaRefreshBtn = document.getElementById("captchaRefreshBtn");
 const KEY_RAW = "RiversideLiteKey"; // 16-byte AES key
 let cachedCryptoKey = null;
 let cachedCaptchaHash = "";
-const uiLog = (...args) => console.log("[RiversideLite][options]", ...args);
+const uiLog = (...args) => {
+  const ts = new Date().toISOString();
+  console.log(`[RiversideLite][options][${ts}]`, ...args);
+};
 
 function init() {
   // Load settings and update UI

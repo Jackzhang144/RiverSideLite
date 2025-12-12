@@ -37,7 +37,10 @@ let cachedState = { ...STATE_DEFAULTS };
 let stateReady = false;
 let adoptPromise = null;
 
-const log = (...args) => console.log("[RiversideLite]", ...args);
+const log = (...args) => {
+  const ts = new Date().toISOString();
+  console.log(`[RiversideLite][${ts}]`, ...args);
+};
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "local") return;
@@ -1084,6 +1087,14 @@ async function callApiWithAuth(method, url) {
     if (auth) {
       log("loaded auth from page");
       await persistState({ ...cachedState, authorizationHeader: auth });
+    } else {
+      // No open tab to read auth from; proactively adopt before first request
+      const adopted = await ensureAuthorization();
+      if (adopted && cachedState.authorizationHeader) {
+        log("adopted auth before request");
+      } else {
+        log("no auth available before request");
+      }
     }
   }
   const headers = {
@@ -1114,6 +1125,7 @@ async function callApiWithAuth(method, url) {
   }
   if (res.status === 401) {
     // Second retry: explicitly call adoptLegacyAuth to mint a new Authorization with current cookies
+    log("api 401, trying adoptLegacyAuth");
     const adopted = await ensureAuthorization();
     if (adopted && cachedState.authorizationHeader) {
       headers["Authorization"] = cachedState.authorizationHeader;
@@ -1121,6 +1133,7 @@ async function callApiWithAuth(method, url) {
     }
   }
   if (res.status === 401) {
+    log("api still 401 after retries", { url });
     await persistState({ ...cachedState, authorizationHeader: "" });
   }
   return res;
