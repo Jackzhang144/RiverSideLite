@@ -1,3 +1,5 @@
+importScripts("shared.js");
+
 const BBS_ROOT = "https://bbs.uestc.edu.cn/";
 const CHECK_URL = "https://bbs.uestc.edu.cn/home.php?mod=space";
 const CHECK_INTERVAL_MINUTES = 1;
@@ -25,16 +27,10 @@ const URLS = {
 };
 
 const STATE_DEFAULTS = {
+  ...STORAGE_DEFAULTS,
   lastTotal: 0,
   lastErrorCode: "",
-  notificationsEnabled: true,
-  version: "new",
   authorizationHeader: "",
-  meowPushEnabled: false,
-  meowNickname: "",
-  meowLinkMode: "none",
-  accounts: [],
-  activeUsername: "",
 };
 
 let cachedState = { ...STATE_DEFAULTS };
@@ -373,10 +369,16 @@ async function ensureBadge() {
   } catch (_) {}
 }
 
-async function switchAccountLegacy(username, password) {
+async function switchAccountLegacy(username, password, captcha) {
   await ensureStateLoaded();
   const targetUser = (username || cachedState.activeUsername || "").trim();
   let pwd = password || "";
+  log("switchAccountLegacy start", {
+    targetUser,
+    hasPassword: Boolean(password),
+    hasCaptcha: Boolean(captcha?.code),
+    hasCachedAuth: Boolean(cachedState.authorizationHeader),
+  });
   if (!pwd && targetUser) {
     const accounts = await loadAccounts();
     const found = accounts.find((item) => item.username === targetUser);
@@ -395,15 +397,17 @@ async function switchAccountLegacy(username, password) {
   }
 
   try {
+    log("switchAccountLegacy logout + login", { targetUser, hasPwd: Boolean(pwd) });
     await logoutLegacy().catch((err) => {
       console.warn("logout skipped or failed", err);
     });
     await persistState({ ...cachedState, authorizationHeader: "", lastTotal: 0, activeUsername: targetUser });
 
-    const loginOk = await loginLegacy(targetUser, pwd);
+    const loginOk = await loginLegacy(targetUser, pwd, captcha);
     if (!loginOk) {
       throw new Error("登录失败，请检查用户名或密码");
     }
+    log("switchAccountLegacy login ok, adopting auth");
     const adopted = await adoptLegacyAuth();
     if (!adopted) {
       throw new Error("登录成功但获取凭证失败，请在站点打开页面后重试");
@@ -418,6 +422,7 @@ async function switchAccountLegacy(username, password) {
     await checkStatus();
     return true;
   } catch (error) {
+    console.error("switchAccountLegacy failed", error);
     await persistState({ ...cachedState, authorizationHeader: "", lastTotal: 0 });
     throw error;
   }
@@ -602,7 +607,7 @@ async function logoutLegacy() {
   }
 }
 
-async function loginLegacy(username, password) {
+async function loginLegacy(username, password, captchaInput = null) {
   const base = BBS_ROOT.replace(/\/$/, "");
   const url = `${base}/member.php?mod=logging&action=login&loginsubmit=yes&inajax=1`;
   const body = new URLSearchParams();
@@ -611,6 +616,10 @@ async function loginLegacy(username, password) {
   body.set("password", password);
   body.set("questionid", "0");
   body.set("cookietime", "2592000");
+  if (captchaInput?.hash && captchaInput?.code) {
+    body.set("seccodehash", captchaInput.hash);
+    body.set("seccodeverify", captchaInput.code);
+  }
 
   const res = await fetch(url, {
     method: "POST",
@@ -633,7 +642,64 @@ async function loginLegacy(username, password) {
   if (text.includes("欢迎您回来") || text.includes("succeedhandle_login")) {
     return true;
   }
+  if (/seccode|验证码|security|login_seccheck/i.test(text)) {
+    const inlineCaptcha = parseLoginCaptcha(text, base);
+    const captcha = inlineCaptcha || (await fetchLoginCaptchaInfo());
+    log("loginLegacy requires captcha", {
+      snippet: text.slice(0, 200),
+      hasCaptcha: Boolean(captcha),
+      fromInline: Boolean(inlineCaptcha),
+    });
+    const err = new Error("需要验证码，请输入后重试");
+    err.needCaptcha = true;
+    err.captcha = captcha;
+    throw err;
+  }
   throw new Error("登录失败，请检查用户名或密码");
+}
+
+async function fetchLoginCaptchaInfo() {
+  try {
+    const base = BBS_ROOT.replace(/\/$/, "");
+    const pageUrl = `${base}/member.php?mod=logging&action=login`;
+    const res = await fetch(pageUrl, { credentials: "include", cache: "no-store" });
+    const html = await res.text();
+
+    const parsed = parseLoginCaptcha(html, base);
+    log("fetched login captcha", parsed || { empty: true });
+    if (!parsed) {
+      console.warn("captcha not found in login page");
+    }
+    return parsed;
+  } catch (error) {
+    console.error("fetchLoginCaptchaInfo failed", error);
+    return null;
+  }
+}
+
+function parseLoginCaptcha(html, base) {
+  try {
+    const hashFromInput = html.match(/name=["']seccodehash["'][^>]*value=["']([^"']+)/i);
+    const hashFromId = html.match(/seccode_(\w+)/i);
+    const imgMatch = html.match(/<img[^>]+src=["']([^"']*misc\\.php\\?mod=seccode[^"']+)["']/i);
+    const inlineMatch = html.match(/misc\\.php\\?mod=seccode[^"'>\\s]*idhash=([A-Za-z0-9]+)/i);
+
+    const hash = (hashFromInput && hashFromInput[1]) || (hashFromId && hashFromId[1]) || "";
+    let captchaUrl = imgMatch && imgMatch[1] ? imgMatch[1] : "";
+    if (!captchaUrl && inlineMatch && inlineMatch[0]) {
+      captchaUrl = inlineMatch[0].startsWith("http")
+        ? inlineMatch[0]
+        : `misc.php?mod=seccode&idhash=${inlineMatch[1]}`;
+    }
+    if (captchaUrl && !/^https?:/i.test(captchaUrl)) {
+      captchaUrl = new URL(captchaUrl, base).toString();
+    }
+    if (!hash && !captchaUrl) return null;
+    return { hash, url: captchaUrl, snippet: html.slice(0, 200) };
+  } catch (error) {
+    console.error("parseLoginCaptcha failed", error);
+    return null;
+  }
 }
 
 async function fetchFormhash() {
@@ -956,14 +1022,33 @@ chrome.runtime.onMessage.addListener((message, _, sendResponse) => {
   if (message?.type === "switchAccount") {
     (async () => {
       try {
-        await switchAccountLegacy(message.username, message.password);
+        log("switchAccount message received", {
+          user: message.username || "",
+          hasPwd: Boolean(message.password),
+          hasCaptcha: Boolean(message.captcha?.code),
+        });
+        await switchAccountLegacy(message.username, message.password, message.captcha);
         sendResponse({ ok: true });
       } catch (error) {
         console.error(error);
-        sendResponse({ ok: false, error: error?.message || "unknown" });
+        sendResponse({
+          ok: false,
+          error: error?.message || "unknown",
+          needCaptcha: Boolean(error?.needCaptcha),
+          captcha: error?.captcha || null,
+        });
       }
     })();
     return true; // keep port open for async response
+  }
+  if (message?.type === "getLoginCaptcha") {
+    fetchLoginCaptchaInfo()
+      .then((info) => sendResponse({ ok: Boolean(info), captcha: info || null }))
+      .catch((error) => {
+        console.error("getLoginCaptcha failed", error);
+        sendResponse({ ok: false, error: error?.message || "unknown" });
+      });
+    return true;
   }
   return false;
 });
@@ -1018,6 +1103,7 @@ async function callApiWithAuth(method, url) {
 
   let res = await doFetch();
   if (res.status === 401) {
+    // First retry: read latest Authorization from any open BBS tab (if the page refreshed token quietly)
     log("api 401, retrying with fresh auth");
     const freshAuth = await readAuthorizationFromPage();
     if (freshAuth && freshAuth !== cachedState.authorizationHeader) {
@@ -1026,12 +1112,16 @@ async function callApiWithAuth(method, url) {
       res = await doFetch();
     }
   }
-  if (res.status === 401 && !cachedState.authorizationHeader) {
+  if (res.status === 401) {
+    // Second retry: explicitly call adoptLegacyAuth to mint a new Authorization with current cookies
     const adopted = await ensureAuthorization();
-    if (adopted) {
+    if (adopted && cachedState.authorizationHeader) {
       headers["Authorization"] = cachedState.authorizationHeader;
       res = await doFetch();
     }
+  }
+  if (res.status === 401) {
+    await persistState({ ...cachedState, authorizationHeader: "" });
   }
   return res;
 }

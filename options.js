@@ -15,40 +15,23 @@ const switchStatus = document.getElementById("switchStatus");
 const accountSaveBtn = document.getElementById("accountSaveBtn");
 const accountStatus = document.getElementById("accountStatus");
 const accountList = document.getElementById("accountList");
+const captchaArea = document.getElementById("captchaArea");
+const captchaImg = document.getElementById("loginCaptchaImg");
+const captchaInput = document.getElementById("loginCaptchaInput");
+const captchaRefreshBtn = document.getElementById("captchaRefreshBtn");
 const KEY_RAW = "RiversideLiteKey"; // 16-byte AES key
 let cachedCryptoKey = null;
-
-function sendMessagePromise(message) {
-  return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage(message, (response) => {
-      const err = chrome.runtime.lastError;
-      if (err) {
-        reject(new Error(err.message || "sendMessage failed"));
-        return;
-      }
-      resolve(response);
-    });
-  });
-}
-
-const DEFAULTS = {
-  notificationsEnabled: true,
-  version: "new", // Default to new version
-  meowPushEnabled: false,
-  meowNickname: "",
-  meowLinkMode: "none",
-  accounts: [],
-  activeUsername: "",
-};
+let cachedCaptchaHash = "";
+const uiLog = (...args) => console.log("[RiversideLite][options]", ...args);
 
 function init() {
   // Load settings and update UI
-  chrome.storage.local.get(DEFAULTS, (items) => {
+  chrome.storage.local.get(STORAGE_DEFAULTS, (items) => {
     notificationsToggle.checked = Boolean(items.notificationsEnabled);
     meowToggle.checked = Boolean(items.meowPushEnabled);
     meowNicknameInput.value = items.meowNickname || "";
     meowNicknameInput.disabled = !meowToggle.checked;
-    const linkMode = items.meowLinkMode || DEFAULTS.meowLinkMode;
+    const linkMode = items.meowLinkMode || STORAGE_DEFAULTS.meowLinkMode;
     if (linkMode === "none") {
       meowLinkNoneRadio.checked = true;
     } else if (linkMode === "list") {
@@ -117,18 +100,32 @@ function init() {
     switchBtn.textContent = "切换中...";
     switchStatus.textContent = "";
     try {
-      const { ok, error } = await sendMessagePromise({
+      uiLog("switch submit", { username, hasPwd: Boolean(password), hasCaptcha: Boolean(cachedCaptchaHash) });
+      const captchaValue = (captchaInput && captchaInput.value.trim()) || "";
+      const captchaPayload =
+        cachedCaptchaHash && captchaValue ? { hash: cachedCaptchaHash, code: captchaValue } : undefined;
+      const { ok, error, needCaptcha, captcha } = await sendMessagePromise({
         type: "switchAccount",
         username,
         password,
+        captcha: captchaPayload,
       });
       if (!ok) {
+        if (needCaptcha) {
+          uiLog("switch needs captcha", { captcha });
+          await ensureCaptchaLoaded(false, captcha);
+          switchStatus.textContent = "需要验证码，请输入图中的字符后重试";
+          switchStatus.style.color = "#c5221f";
+          return;
+        }
         throw new Error(error || "切换失败，请稍后重试");
       }
       switchPasswordInput.value = "";
+      clearCaptcha();
       switchStatus.textContent = "切换成功，请刷新页面";
       switchStatus.style.color = "#137333";
     } catch (err) {
+      uiLog("switch failed", err);
       switchStatus.textContent = err.message || "切换失败";
       switchStatus.style.color = "#c5221f";
     } finally {
@@ -141,6 +138,11 @@ function init() {
     chrome.storage.local.set({ meowNickname: meowNicknameInput.value.trim() });
   });
 
+  captchaRefreshBtn?.addEventListener("click", async () => {
+    uiLog("manual captcha refresh");
+    await ensureCaptchaLoaded(true);
+  });
+
   accountSaveBtn?.addEventListener("click", () => {
     const username = switchUsernameInput.value.trim();
     const password = switchPasswordInput.value;
@@ -151,7 +153,7 @@ function init() {
     }
     encryptPassword(password)
       .then((encrypted) => {
-        chrome.storage.local.get(DEFAULTS, (items) => {
+        chrome.storage.local.get(STORAGE_DEFAULTS, (items) => {
           const accounts = Array.isArray(items.accounts) ? [...items.accounts] : [];
           const existingIndex = accounts.findIndex((acc) => acc.username === username);
           const entry = { username, passwordEnc: encrypted };
@@ -193,10 +195,64 @@ function init() {
     }
   });
 
-  renderAccountList(DEFAULTS.accounts, DEFAULTS.activeUsername);
+  renderAccountList(STORAGE_DEFAULTS.accounts, STORAGE_DEFAULTS.activeUsername);
 }
 
 document.addEventListener("DOMContentLoaded", init);
+
+async function ensureCaptchaLoaded(force = false, preset = null) {
+  if (!captchaArea) return;
+  uiLog("ensureCaptchaLoaded", { force, hasCached: Boolean(cachedCaptchaHash), preset });
+  if (preset && (preset.hash || preset.url)) {
+    showCaptcha(preset);
+    return;
+  }
+  if (!force && cachedCaptchaHash) {
+    captchaArea.style.display = "flex";
+    return;
+  }
+  try {
+    const { ok, captcha } = await sendMessagePromise({ type: "getLoginCaptcha" });
+    if (ok && captcha) {
+      showCaptcha(captcha);
+    } else {
+      captchaArea.style.display = "flex";
+      switchStatus.textContent = "获取验证码失败，请稍后再试";
+      switchStatus.style.color = "#c5221f";
+    }
+  } catch (error) {
+    captchaArea.style.display = "flex";
+    switchStatus.textContent = "获取验证码失败，请稍后再试";
+    switchStatus.style.color = "#c5221f";
+  }
+}
+
+function showCaptcha(info = {}) {
+  if (!captchaArea) return;
+  cachedCaptchaHash = info.hash || "";
+  const url = info.url || "";
+  captchaArea.style.display = "flex";
+  if (captchaImg) {
+    captchaImg.src = url ? `${url}${url.includes("?") ? "&" : "?"}_=${Date.now()}` : "";
+    captchaImg.alt = url ? "验证码" : "无法加载验证码";
+  }
+  if (captchaInput) {
+    captchaInput.value = "";
+    captchaInput.focus();
+  }
+}
+
+function clearCaptcha() {
+  if (!captchaArea) return;
+  cachedCaptchaHash = "";
+  captchaArea.style.display = "none";
+  if (captchaImg) {
+    captchaImg.src = "";
+  }
+  if (captchaInput) {
+    captchaInput.value = "";
+  }
+}
 
 function renderAccountList(accounts, activeUsername = "") {
   accountList.innerHTML = "";
@@ -235,7 +291,12 @@ function renderAccountList(accounts, activeUsername = "") {
       switchStatus.textContent = "";
       sendMessagePromise({ type: "switchAccount", username: acc.username })
         .then((res) => {
-          if (!res?.ok) throw new Error(res?.error || "切换失败");
+          if (!res?.ok) {
+            if (res?.needCaptcha) {
+              throw new Error("需要验证码，请上方输入密码与验证码后重试");
+            }
+            throw new Error(res?.error || "切换失败");
+          }
           switchStatus.textContent = "切换成功，请刷新页面";
           switchStatus.style.color = "#137333";
           chrome.storage.local.set({ activeUsername: acc.username });

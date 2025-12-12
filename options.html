@@ -188,6 +188,10 @@
       flex: 1;
       min-width: 0;
     }
+    .captcha-img {
+      background: #fdfefe;
+      object-fit: cover;
+    }
     .status-text {
       font-size: 13px;
       color: var(--muted);
@@ -365,7 +369,7 @@
 
     <div class="setting-group">
       <h1>账号切换 <span class="hint">本地存储，多账号快速切换</span></h1>
-      <p>退出当前账号并使用新账号登录，采用旧版登录方式（无验证码）。密码仅用于本地加密存储与切换，不会上传。</p>
+      <p>退出当前账号并使用新账号登录，采用旧版登录方式；若站点要求验证码会在下方展示图片。密码仅用于本地加密存储与切换，不会上传。</p>
       <div class="input-row">
         <span>用户名</span>
         <input type="text" id="switchUsername" placeholder="输入用户名">
@@ -373,6 +377,14 @@
       <div class="input-row">
         <span>密码</span>
         <input type="password" id="switchPassword" placeholder="输入密码">
+      </div>
+      <div class="text-row captcha-row" id="captchaArea" style="display:none; align-items: center;">
+        <span>验证码</span>
+        <div class="inline-actions" style="flex-wrap: wrap; row-gap: 6px;">
+          <img id="loginCaptchaImg" alt="验证码" class="captcha-img" style="height:34px; border:1px solid var(--border); border-radius:6px;" />
+          <input type="text" id="loginCaptchaInput" placeholder="输入图片中的字符" style="width:140px;">
+          <button id="captchaRefreshBtn" type="button" class="ghost">换一张</button>
+        </div>
       </div>
       <div class="text-row" style="flex-wrap: wrap; row-gap: 6px;">
         <span>账号操作</span>
@@ -431,6 +443,7 @@
     </div>
   </div>
 
+  <script src="shared.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

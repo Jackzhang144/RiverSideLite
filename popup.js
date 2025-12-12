@@ -4,9 +4,15 @@ const HOME_BTN = document.getElementById("homeBtn");
 const OPTIONS_BTN = document.getElementById("btnOptions");
 const ACCOUNT_SELECT = document.getElementById("accountSelect");
 const ACCOUNT_SWITCH_BTN = document.getElementById("accountSwitchBtn");
+const CAPTCHA_PANEL = document.getElementById("captchaPanel");
+const CAPTCHA_IMG = document.getElementById("popupCaptchaImg");
+const CAPTCHA_INPUT = document.getElementById("popupCaptchaInput");
+const CAPTCHA_REFRESH = document.getElementById("popupCaptchaRefresh");
 let activeAccountUsername = "";
 let cachedAccounts = [];
+let popupCaptchaHash = "";
 let currentVersion = "new";
+const uiLog = (...args) => console.log("[RiversideLite][popup]", ...args);
 
 const THREAD_URL_NEW = (threadId) => `https://bbs.uestc.edu.cn/thread/${threadId}`;
 const THREAD_URL_OLD = (threadId) =>
@@ -20,26 +26,26 @@ const CHAT_URL_OLD_BASE = "https://bbs.uestc.edu.cn/home.php?mod=space&do=pm";
 HOME_BTN?.addEventListener("click", openHome);
 OPTIONS_BTN?.addEventListener("click", openOptions);
 ACCOUNT_SWITCH_BTN?.addEventListener("click", switchAccountFromPopup);
+CAPTCHA_REFRESH?.addEventListener("click", () => ensurePopupCaptcha(true));
 ACCOUNT_SELECT?.addEventListener("change", () => updateSwitchButtonState());
 init();
 
 function init() {
-  chrome.storage.local.get(
-    { version: "new", accounts: [], activeUsername: "" },
-    ({ version, accounts, activeUsername }) => {
-      currentVersion = version === "old" ? "old" : "new";
-      activeAccountUsername = activeUsername || "";
-      populateAccountSelect(accounts || [], activeAccountUsername);
-      fetchSummary().catch((error) => {
-        console.error(error);
-        setStatus("加载失败，请检查是否已登录。", true);
-      });
-    }
-  );
+  chrome.storage.local.get(STORAGE_DEFAULTS, ({ version, accounts, activeUsername }) => {
+    currentVersion = version === "old" ? "old" : "new";
+    activeAccountUsername = activeUsername || "";
+    uiLog("init storage loaded", { version: currentVersion, activeAccountUsername });
+    populateAccountSelect(accounts || [], activeAccountUsername);
+    fetchSummary().catch((error) => {
+      console.error(error);
+      setStatus("加载失败，请检查是否已登录。", true);
+    });
+  });
 }
 
 async function fetchSummary() {
   setStatus("加载中...");
+  uiLog("fetchSummary start");
   const { ok, data, error, status } = await chrome.runtime.sendMessage({
     type: "fetchSummary",
   });
@@ -72,6 +78,11 @@ async function fetchSummary() {
   const chats = Array.isArray(payload?.new_chats) ? payload.new_chats : [];
   const chatCount = payload?.new_messages?.chat || 0;
 
+  uiLog("fetchSummary ok", {
+    notifications: notifications.length,
+    chats: chats.length,
+    chatCount,
+  });
   renderLists(notifications, chats, chatCount);
 }
 
@@ -258,7 +269,7 @@ function populateAccountSelect(accounts, activeUsername = "") {
     const opt = document.createElement("option");
     const isActive = acc.username === activeAccountUsername;
     opt.value = acc.username;
-    opt.textContent = acc.username + (isActive ? "(on)" : "");
+    opt.textContent = acc.username + (isActive ? "(ON)" : "");
     if (isActive) opt.selected = true;
     ACCOUNT_SELECT.appendChild(opt);
   });
@@ -270,9 +281,63 @@ function refreshAccountSelect(activeUsername = activeAccountUsername) {
     populateAccountSelect(cachedAccounts, activeUsername);
     return;
   }
+  uiLog("refreshAccountSelect from storage");
   chrome.storage.local.get({ accounts: [] }, ({ accounts }) => {
     populateAccountSelect(accounts || [], activeUsername);
   });
+}
+
+async function ensurePopupCaptcha(force = false, preset = null) {
+  if (!CAPTCHA_PANEL) return;
+  uiLog("ensurePopupCaptcha", { force, hasHash: Boolean(popupCaptchaHash), preset: Boolean(preset) });
+  if (preset && (preset.hash || preset.url)) {
+    showPopupCaptcha(preset);
+    return;
+  }
+  if (!force && popupCaptchaHash) {
+    showPopupCaptcha({ hash: popupCaptchaHash, url: CAPTCHA_IMG?.src || "" });
+    return;
+  }
+  try {
+    const { ok, captcha } = await sendMessagePromise({ type: "getLoginCaptcha" });
+    if (ok && captcha) {
+      showPopupCaptcha(captcha);
+    } else {
+      setStatus("获取验证码失败，请稍后再试。", true);
+    }
+  } catch (error) {
+    console.error("ensurePopupCaptcha failed", error);
+    setStatus("获取验证码失败，请稍后再试。", true);
+  }
+}
+
+function showPopupCaptcha(info = {}) {
+  popupCaptchaHash = info.hash || "";
+  if (CAPTCHA_PANEL) {
+    CAPTCHA_PANEL.classList.remove("hidden");
+  }
+  if (CAPTCHA_IMG) {
+    const url = info.url || "";
+    CAPTCHA_IMG.src = url ? `${url}${url.includes("?") ? "&" : "?"}_=${Date.now()}` : "";
+    CAPTCHA_IMG.alt = url ? "验证码" : "无法加载验证码";
+  }
+  if (CAPTCHA_INPUT) {
+    CAPTCHA_INPUT.value = "";
+    CAPTCHA_INPUT.focus();
+  }
+}
+
+function hidePopupCaptcha() {
+  popupCaptchaHash = "";
+  if (CAPTCHA_PANEL) {
+    CAPTCHA_PANEL.classList.add("hidden");
+  }
+  if (CAPTCHA_IMG) {
+    CAPTCHA_IMG.src = "";
+  }
+  if (CAPTCHA_INPUT) {
+    CAPTCHA_INPUT.value = "";
+  }
 }
 
 async function switchAccountFromPopup() {
@@ -282,12 +347,23 @@ async function switchAccountFromPopup() {
     setAccountButtonState("请选择账号", "#b20000");
     return;
   }
+  setStatus("");
   ACCOUNT_SWITCH_BTN.disabled = true;
   ACCOUNT_SWITCH_BTN.textContent = "切换中...";
   try {
-    const res = await sendMessagePromise({ type: "switchAccount", username });
+    const captchaValue = (CAPTCHA_INPUT?.value || "").trim();
+    const captchaPayload = popupCaptchaHash && captchaValue ? { hash: popupCaptchaHash, code: captchaValue } : undefined;
+    const res = await sendMessagePromise({ type: "switchAccount", username, captcha: captchaPayload });
+    uiLog("switchAccountFromPopup result", res);
+    if (res?.needCaptcha) {
+      await ensurePopupCaptcha(false, res.captcha);
+      setAccountButtonState("需验证码", "#b20000");
+      setStatus("站点需要验证码，请输入下方验证码后再试。", true);
+      return;
+    }
     if (!res?.ok) throw new Error(res?.error || "切换失败");
     setAccountButtonState("切换成功", "#137333", true);
+    hidePopupCaptcha();
     activeAccountUsername = username;
     refreshAccountSelect(username);
     try {
@@ -309,19 +385,6 @@ async function switchAccountFromPopup() {
       ACCOUNT_SWITCH_BTN.style.borderColor = "";
     }
   }
-}
-
-function sendMessagePromise(message) {
-  return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage(message, (response) => {
-      const err = chrome.runtime.lastError;
-      if (err) {
-        reject(new Error(err.message || "sendMessage failed"));
-        return;
-      }
-      resolve(response);
-    });
-  });
 }
 
 function setAccountButtonState(text, color, success = false) {

@@ -247,6 +247,40 @@
         width: 16px;
         height: 16px;
       }
+      .captcha-panel {
+        margin-top: 6px;
+        padding: 8px 10px;
+        border: 1px dashed var(--border);
+        border-radius: 8px;
+        background: #fff;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .captcha-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .captcha-img {
+        height: 34px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: #fff;
+      }
+      .captcha-input {
+        flex: 1;
+        padding: 6px 8px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font-size: 12px;
+      }
+      .ghost-btn {
+        background: #fff;
+        color: var(--primary);
+        border-color: var(--border);
+      }
     </style>
   </head>
   <body>
@@ -272,6 +306,15 @@
     <div class="footer">
       <button id="homeBtn" class="btn">前往首页</button>
     </div>
+    <div id="captchaPanel" class="captcha-panel hidden">
+      <div class="captcha-label">需要验证码，请输入后重试</div>
+      <div class="captcha-row">
+        <img id="popupCaptchaImg" alt="验证码" class="captcha-img" />
+        <input id="popupCaptchaInput" type="text" placeholder="输入验证码" class="captcha-input" />
+        <button id="popupCaptchaRefresh" class="btn ghost-btn" type="button">换一张</button>
+      </div>
+    </div>
+    <script src="shared.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>
