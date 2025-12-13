@@ -62,7 +62,12 @@ jobs:
           fi
           echo "submission_id=$SUBMISSION_ID" >> "$GITHUB_OUTPUT"
           if [ -n "$SUBMISSION_URL" ]; then
-            echo "submission_url=$SUBMISSION_URL" >> "$GITHUB_OUTPUT"
+            # 如果 Location 不是完整 URL，则拼上产品路径
+            if echo "$SUBMISSION_URL" | grep -qE '^https?://'; then
+              echo "submission_url=$SUBMISSION_URL" >> "$GITHUB_OUTPUT"
+            else
+              echo "submission_url=https://api.addons.microsoftedge.microsoft.com/v1/products/$EDGE_PRODUCT_ID/submissions/$SUBMISSION_URL" >> "$GITHUB_OUTPUT"
+            fi
           else
             echo "submission_url=https://api.addons.microsoftedge.microsoft.com/v1/products/$EDGE_PRODUCT_ID/submissions/$SUBMISSION_ID" >> "$GITHUB_OUTPUT"
           fi
