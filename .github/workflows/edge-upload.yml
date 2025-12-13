@@ -27,8 +27,10 @@ jobs:
         id: submit
         run: |
           BODY_FILE=$(mktemp)
+          HEADER_FILE=$(mktemp)
           HTTP_STATUS=$(
             curl -sS -w "%{http_code}" \
+              -D "$HEADER_FILE" \
               -H "Authorization: ApiKey $EDGE_API_KEY" \
               -H "X-ClientID: $EDGE_CLIENT_ID" \
               -F "file=@dist/edge-package.zip;type=application/zip" \
@@ -36,6 +38,9 @@ jobs:
               "https://api.addons.microsoftedge.microsoft.com/v1/products/$EDGE_PRODUCT_ID/submissions"
           )
           echo "Upload HTTP status: $HTTP_STATUS"
+          echo "Upload response headers:"
+          cat "$HEADER_FILE"
+          echo
           echo "Upload response body:"
           cat "$BODY_FILE"
           echo
@@ -44,6 +49,9 @@ jobs:
             exit 1
           fi
           SUBMISSION_ID=$(jq -r '.id // .submissionId // .value // .SubmissionId // empty' "$BODY_FILE")
+          if [ -z "$SUBMISSION_ID" ]; then
+            SUBMISSION_ID=$(grep -i "^Location:" "$HEADER_FILE" | sed -n 's/.*submissions[/]\([A-Za-z0-9-]\+\).*/\1/p' | tail -n1)
+          fi
           if [ -z "$SUBMISSION_ID" ]; then
             echo "No submission id in response"
             exit 1
