@@ -4,15 +4,14 @@ const HOME_BTN = document.getElementById("homeBtn");
 const OPTIONS_BTN = document.getElementById("btnOptions");
 const ACCOUNT_SELECT = document.getElementById("accountSelect");
 const ACCOUNT_SWITCH_BTN = document.getElementById("accountSwitchBtn");
-// 验证码功能暂时下线，占位保留
-// const CAPTCHA_PANEL = document.getElementById("captchaPanel");
-// const CAPTCHA_IMG = document.getElementById("popupCaptchaImg");
-// const CAPTCHA_INPUT = document.getElementById("popupCaptchaInput");
-// const CAPTCHA_REFRESH = document.getElementById("popupCaptchaRefresh");
+const CAPTCHA_PANEL = document.getElementById("captchaPanel");
+const CAPTCHA_IMG = document.getElementById("popupCaptchaImg");
+const CAPTCHA_INPUT = document.getElementById("popupCaptchaInput");
+const CAPTCHA_REFRESH = document.getElementById("popupCaptchaRefresh");
 const ACCOUNT_CACHE_KEY = "popupAccountsCache";
 let activeAccountUsername = "";
 let cachedAccounts = [];
-// let popupCaptchaHash = "";
+let popupCaptchaHash = "";
 let currentVersion = "new";
 let lastSummaryCache = null;
 let fetchSummaryPromise = null;
@@ -34,7 +33,7 @@ const CHAT_URL_OLD_BASE = "https://bbs.uestc.edu.cn/home.php?mod=space&do=pm";
 HOME_BTN?.addEventListener("click", openHome);
 OPTIONS_BTN?.addEventListener("click", openOptions);
 ACCOUNT_SWITCH_BTN?.addEventListener("click", switchAccountFromPopup);
-// CAPTCHA_REFRESH?.addEventListener("click", () => ensurePopupCaptcha(true));
+CAPTCHA_REFRESH?.addEventListener("click", () => ensurePopupCaptcha(true));
 ACCOUNT_SELECT?.addEventListener("change", () => updateSwitchButtonState());
 init();
 
@@ -449,10 +448,19 @@ async function switchAccountFromPopup() {
   ACCOUNT_SWITCH_BTN.disabled = true;
   ACCOUNT_SWITCH_BTN.textContent = "切换中...";
   try {
-    const res = await sendMessagePromise({ type: "switchAccount", username });
+    const captchaValue = (CAPTCHA_INPUT?.value || "").trim();
+    const captchaPayload = popupCaptchaHash && captchaValue ? { hash: popupCaptchaHash, code: captchaValue } : undefined;
+    const res = await sendMessagePromise({ type: "switchAccount", username, captcha: captchaPayload });
     uiLog("switchAccountFromPopup result", res);
+    if (res?.needCaptcha) {
+      await ensurePopupCaptcha(false, res.captcha);
+      setAccountButtonState("需验证码", "#b20000");
+      setStatus("站点需要验证码，请输入下方验证码后再试。", true);
+      return;
+    }
     if (!res?.ok) throw new Error(res?.error || "切换失败");
     setAccountButtonState("切换成功", "#137333", true);
+    hidePopupCaptcha();
     activeAccountUsername = username;
     refreshAccountSelect(username);
     try {

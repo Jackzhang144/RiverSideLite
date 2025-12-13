@@ -645,12 +645,65 @@ async function loginLegacy(username, password, captchaInput = null) {
   if (text.includes("欢迎您回来") || text.includes("succeedhandle_login")) {
     return true;
   }
+  if (/seccode|验证码|security|login_seccheck/i.test(text)) {
+    const inlineCaptcha = parseLoginCaptcha(text, base);
+    const captcha = inlineCaptcha || (await fetchLoginCaptchaInfo());
+    log("loginLegacy requires captcha", {
+      snippet: text.slice(0, 200),
+      hasCaptcha: Boolean(captcha),
+      fromInline: Boolean(inlineCaptcha),
+    });
+    const err = new Error("需要验证码，请输入后重试");
+    err.needCaptcha = true;
+    err.captcha = captcha;
+    throw err;
+  }
   throw new Error("登录失败，请检查用户名或密码");
 }
 
-// 验证码相关逻辑暂时下线，保留占位方便后续恢复
-// async function fetchLoginCaptchaInfo() { ... }
-// function parseLoginCaptcha(html, base) { ... }
+async function fetchLoginCaptchaInfo() {
+  try {
+    const base = BBS_ROOT.replace(/\/$/, "");
+    const pageUrl = `${base}/member.php?mod=logging&action=login`;
+    const res = await fetch(pageUrl, { credentials: "include", cache: "no-store" });
+    const html = await res.text();
+
+    const parsed = parseLoginCaptcha(html, base);
+    log("fetched login captcha", parsed || { empty: true });
+    if (!parsed) {
+      console.warn("captcha not found in login page");
+    }
+    return parsed;
+  } catch (error) {
+    console.error("fetchLoginCaptchaInfo failed", error);
+    return null;
+  }
+}
+
+function parseLoginCaptcha(html, base) {
+  try {
+    const hashFromInput = html.match(/name=["']seccodehash["'][^>]*value=["']([^"']+)/i);
+    const hashFromId = html.match(/seccode_(\w+)/i);
+    const imgMatch = html.match(/<img[^>]+src=["']([^"']*misc\\.php\\?mod=seccode[^"']+)["']/i);
+    const inlineMatch = html.match(/misc\\.php\\?mod=seccode[^"'>\\s]*idhash=([A-Za-z0-9]+)/i);
+
+    const hash = (hashFromInput && hashFromInput[1]) || (hashFromId && hashFromId[1]) || "";
+    let captchaUrl = imgMatch && imgMatch[1] ? imgMatch[1] : "";
+    if (!captchaUrl && inlineMatch && inlineMatch[0]) {
+      captchaUrl = inlineMatch[0].startsWith("http")
+        ? inlineMatch[0]
+        : `misc.php?mod=seccode&idhash=${inlineMatch[1]}`;
+    }
+    if (captchaUrl && !/^https?:/i.test(captchaUrl)) {
+      captchaUrl = new URL(captchaUrl, base).toString();
+    }
+    if (!hash && !captchaUrl) return null;
+    return { hash, url: captchaUrl, snippet: html.slice(0, 200) };
+  } catch (error) {
+    console.error("parseLoginCaptcha failed", error);
+    return null;
+  }
+}
 
 async function fetchFormhash() {
   try {
@@ -981,10 +1034,24 @@ chrome.runtime.onMessage.addListener((message, _, sendResponse) => {
         sendResponse({ ok: true });
       } catch (error) {
         console.error(error);
-        sendResponse({ ok: false, error: error?.message || "unknown" });
+        sendResponse({
+          ok: false,
+          error: error?.message || "unknown",
+          needCaptcha: Boolean(error?.needCaptcha),
+          captcha: error?.captcha || null,
+        });
       }
     })();
     return true; // keep port open for async response
+  }
+  if (message?.type === "getLoginCaptcha") {
+    fetchLoginCaptchaInfo()
+      .then((info) => sendResponse({ ok: Boolean(info), captcha: info || null }))
+      .catch((error) => {
+        console.error("getLoginCaptcha failed", error);
+        sendResponse({ ok: false, error: error?.message || "unknown" });
+      });
+    return true;
   }
   return false;
 });
