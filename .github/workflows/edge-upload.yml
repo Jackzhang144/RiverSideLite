@@ -77,14 +77,6 @@ jobs:
           SUBMISSION_ID: ${{ steps.submit.outputs.submission_id }}
           SUBMISSION_URL: ${{ steps.submit.outputs.submission_url }}
         run: |
-          BASE_URL="https://api.addons.microsoftedge.microsoft.com/v1/products/$EDGE_PRODUCT_ID/submissions"
-          TARGET_URL="$SUBMISSION_URL"
-          if [ -z "$TARGET_URL" ]; then
-            TARGET_URL="$BASE_URL/$SUBMISSION_ID"
-          elif ! echo "$TARGET_URL" | grep -qE '^https?://'; then
-            TARGET_URL="$BASE_URL/$TARGET_URL"
-          fi
-          echo "Polling URL: $TARGET_URL"
           for i in {1..20}; do
             STATUS_BODY=$(mktemp)
             STATUS_CODE=$(
@@ -92,7 +84,7 @@ jobs:
                 -H "Authorization: ApiKey $EDGE_API_KEY" \
                 -H "X-ClientID: $EDGE_CLIENT_ID" \
                 -o "$STATUS_BODY" \
-                "$TARGET_URL"
+                "${SUBMISSION_URL:-https://api.addons.microsoftedge.microsoft.com/v1/products/$EDGE_PRODUCT_ID/submissions/$SUBMISSION_ID}"
             )
             echo "Poll attempt $i, HTTP $STATUS_CODE"
             cat "$STATUS_BODY"
