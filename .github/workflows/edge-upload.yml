@@ -27,8 +27,10 @@ jobs:
         id: submit
         run: |
           BODY_FILE=$(mktemp)
+          HEADER_FILE=$(mktemp)
           HTTP_STATUS=$(
             curl -sS -w "%{http_code}" \
+              -D "$HEADER_FILE" \
               -H "Authorization: ApiKey $EDGE_API_KEY" \
               -H "X-ClientID: $EDGE_CLIENT_ID" \
               -F "file=@dist/edge-package.zip;type=application/zip" \
@@ -36,6 +38,9 @@ jobs:
               "https://api.addons.microsoftedge.microsoft.com/v1/products/$EDGE_PRODUCT_ID/submissions"
           )
           echo "Upload HTTP status: $HTTP_STATUS"
+          echo "Upload response headers:"
+          cat "$HEADER_FILE"
+          echo
           echo "Upload response body:"
           cat "$BODY_FILE"
           echo
@@ -45,24 +50,59 @@ jobs:
           fi
           SUBMISSION_ID=$(jq -r '.id // .submissionId // .value // .SubmissionId // empty' "$BODY_FILE")
           if [ -z "$SUBMISSION_ID" ]; then
+            LOC=$(grep -i "^Location:" "$HEADER_FILE" | awk '{print $2}' | tr -d '\r')
+            if [ -n "$LOC" ]; then
+              SUBMISSION_URL="$LOC"
+              SUBMISSION_ID=$(echo "$LOC" | awk -F'/' '{print $NF}')
+            fi
+          fi
+          if [ -z "$SUBMISSION_ID" ]; then
             echo "No submission id in response"
             exit 1
           fi
           echo "submission_id=$SUBMISSION_ID" >> "$GITHUB_OUTPUT"
+          if [ -n "$SUBMISSION_URL" ]; then
+            # 如果 Location 不是完整 URL，则拼上产品路径
+            if echo "$SUBMISSION_URL" | grep -qE '^https?://'; then
+              echo "submission_url=$SUBMISSION_URL" >> "$GITHUB_OUTPUT"
+            else
+              echo "submission_url=https://api.addons.microsoftedge.microsoft.com/v1/products/$EDGE_PRODUCT_ID/submissions/$SUBMISSION_URL" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "submission_url=https://api.addons.microsoftedge.microsoft.com/v1/products/$EDGE_PRODUCT_ID/submissions/$SUBMISSION_ID" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Poll submission status
         env:
           SUBMISSION_ID: ${{ steps.submit.outputs.submission_id }}
+          SUBMISSION_URL: ${{ steps.submit.outputs.submission_url }}
         run: |
+          BASE_URL="https://api.addons.microsoftedge.microsoft.com/v1/products/$EDGE_PRODUCT_ID/submissions"
+          TARGET_URL="$SUBMISSION_URL"
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="$BASE_URL/$SUBMISSION_ID"
+          elif ! echo "$TARGET_URL" | grep -qE '^https?://'; then
+            TARGET_URL="$BASE_URL/$TARGET_URL"
+          fi
+          echo "Polling URL: $TARGET_URL"
           for i in {1..20}; do
-            STATUS=$(
-              curl -sS -f \
+            STATUS_BODY=$(mktemp)
+            STATUS_CODE=$(
+              curl -sS -w "%{http_code}" \
                 -H "Authorization: ApiKey $EDGE_API_KEY" \
                 -H "X-ClientID: $EDGE_CLIENT_ID" \
-                "https://api.addons.microsoftedge.microsoft.com/v1/products/$EDGE_PRODUCT_ID/submissions/$SUBMISSION_ID" \
-              | jq -r '.status'
+                -o "$STATUS_BODY" \
+                "$TARGET_URL"
             )
-            echo "Status: $STATUS"
+            echo "Poll attempt $i, HTTP $STATUS_CODE"
+            cat "$STATUS_BODY"
+            echo
+            if [ "$STATUS_CODE" -eq 404 ]; then
+              echo "Submission not found (404), stopping."
+              exit 1
+            fi
+            STATUS=$(jq -r '.status // empty' "$STATUS_BODY")
+            echo "Status: ${STATUS:-unknown}"
             case "$STATUS" in
               Complete) exit 0 ;;
               Failed) echo "Submission failed"; exit 1 ;;

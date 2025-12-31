@@ -21,11 +21,17 @@ const captchaInput = document.getElementById("loginCaptchaInput");
 const captchaRefreshBtn = document.getElementById("captchaRefreshBtn");
 const KEY_RAW = "RiversideLiteKey"; // 16-byte AES key
 let cachedCryptoKey = null;
-let cachedCaptchaHash = "";
+let cachedCaptchaInfo = null;
 const uiLog = (...args) => {
   const ts = new Date().toISOString();
   console.log(`[RiversideLite][options][${ts}]`, ...args);
 };
+
+function refreshAccountListFromStorage() {
+  chrome.storage.local.get({ accounts: [], activeUsername: "" }, ({ accounts, activeUsername }) => {
+    renderAccountList(accounts || [], activeUsername || "");
+  });
+}
 
 function init() {
   // Load settings and update UI
@@ -103,10 +109,14 @@ function init() {
     switchBtn.textContent = "切换中...";
     switchStatus.textContent = "";
     try {
-      uiLog("switch submit", { username, hasPwd: Boolean(password), hasCaptcha: Boolean(cachedCaptchaHash) });
+      uiLog("switch submit", {
+        username,
+        hasPwd: Boolean(password),
+        hasCaptcha: Boolean(cachedCaptchaInfo?.hash),
+        hasAuth: Boolean(cachedCaptchaInfo?.auth),
+      });
       const captchaValue = (captchaInput && captchaInput.value.trim()) || "";
-      const captchaPayload =
-        cachedCaptchaHash && captchaValue ? { hash: cachedCaptchaHash, code: captchaValue } : undefined;
+      const captchaPayload = buildCaptchaSubmitPayload(captchaValue);
       const { ok, error, needCaptcha, captcha } = await sendMessagePromise({
         type: "switchAccount",
         username,
@@ -115,9 +125,9 @@ function init() {
       });
       if (!ok) {
         if (needCaptcha) {
-          uiLog("switch needs captcha", { captcha });
+          uiLog("switch needs captcha", { captcha: summarizeCaptcha(captcha) });
           await ensureCaptchaLoaded(false, captcha);
-          switchStatus.textContent = "需要验证码，请输入图中的字符后重试";
+          switchStatus.textContent = error || "需要验证码，请输入图中的字符后重试";
           switchStatus.style.color = "#c5221f";
           return;
         }
@@ -125,6 +135,7 @@ function init() {
       }
       switchPasswordInput.value = "";
       clearCaptcha();
+      chrome.storage.local.set({ activeUsername: username });
       switchStatus.textContent = "切换成功，请刷新页面";
       switchStatus.style.color = "#137333";
     } catch (err) {
@@ -202,20 +213,79 @@ function init() {
 }
 
 document.addEventListener("DOMContentLoaded", init);
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "local") return;
+  if (changes.accounts || changes.activeUsername) {
+    refreshAccountListFromStorage();
+  }
+});
+
+function summarizeCaptcha(info) {
+  if (!info) return { hasHash: false, hasAuth: false, hasLoginhash: false };
+  return {
+    hasHash: Boolean(info.hash),
+    hasAuth: Boolean(info.auth),
+    hasLoginhash: Boolean(info.loginhash),
+  };
+}
+
+function normalizeCaptchaInfo(info = {}) {
+  if (!info) return null;
+  const normalized = {
+    hash: info.hash || "",
+    url: info.url || "",
+    image: info.image || "",
+    loginhash: info.loginhash || "",
+    modid: info.modid || "",
+    auth: info.auth || "",
+  };
+  if (!normalized.hash && !normalized.url && !normalized.image) return null;
+  return normalized;
+}
+
+function buildCaptchaContext(info) {
+  if (!info) return null;
+  const context = {
+    hash: info.hash || "",
+    loginhash: info.loginhash || "",
+    modid: info.modid || "",
+    auth: info.auth || "",
+  };
+  if (!context.hash && !context.loginhash && !context.auth) return null;
+  return context;
+}
+
+function buildCaptchaSubmitPayload(code) {
+  if (!code || !cachedCaptchaInfo?.hash) return undefined;
+  return {
+    hash: cachedCaptchaInfo.hash,
+    loginhash: cachedCaptchaInfo.loginhash || "",
+    modid: cachedCaptchaInfo.modid || "",
+    auth: cachedCaptchaInfo.auth || "",
+    code,
+  };
+}
 
 async function ensureCaptchaLoaded(force = false, preset = null) {
   if (!captchaArea) return;
-  uiLog("ensureCaptchaLoaded", { force, hasCached: Boolean(cachedCaptchaHash), preset });
-  if (preset && (preset.hash || preset.url)) {
+  uiLog("ensureCaptchaLoaded", {
+    force,
+    cached: summarizeCaptcha(cachedCaptchaInfo),
+    preset: summarizeCaptcha(preset),
+  });
+  if (preset && (preset.hash || preset.url || preset.image)) {
     showCaptcha(preset);
     return;
   }
-  if (!force && cachedCaptchaHash) {
+  if (!force && cachedCaptchaInfo?.hash) {
     captchaArea.style.display = "flex";
     return;
   }
   try {
-    const { ok, captcha } = await sendMessagePromise({ type: "getLoginCaptcha" });
+    const message = { type: "getLoginCaptcha" };
+    const context = buildCaptchaContext(preset || cachedCaptchaInfo);
+    if (context) message.captcha = context;
+    const { ok, captcha } = await sendMessagePromise(message);
     if (ok && captcha) {
       showCaptcha(captcha);
     } else {
@@ -232,11 +302,16 @@ async function ensureCaptchaLoaded(force = false, preset = null) {
 
 function showCaptcha(info = {}) {
   if (!captchaArea) return;
-  cachedCaptchaHash = info.hash || "";
-  const url = info.url || "";
+  cachedCaptchaInfo = normalizeCaptchaInfo(info);
+  const url = cachedCaptchaInfo?.image || cachedCaptchaInfo?.url || "";
   captchaArea.style.display = "flex";
   if (captchaImg) {
-    captchaImg.src = url ? `${url}${url.includes("?") ? "&" : "?"}_=${Date.now()}` : "";
+    const finalUrl = url
+      ? url.startsWith("data:")
+        ? url
+        : `${url}${url.includes("?") ? "&" : "?"}_=${Date.now()}`
+      : "";
+    captchaImg.src = finalUrl;
     captchaImg.alt = url ? "验证码" : "无法加载验证码";
   }
   if (captchaInput) {
@@ -247,7 +322,7 @@ function showCaptcha(info = {}) {
 
 function clearCaptcha() {
   if (!captchaArea) return;
-  cachedCaptchaHash = "";
+  cachedCaptchaInfo = null;
   captchaArea.style.display = "none";
   if (captchaImg) {
     captchaImg.src = "";
@@ -290,24 +365,24 @@ function renderAccountList(accounts, activeUsername = "") {
     const switchBtnEl = document.createElement("button");
     switchBtnEl.type = "button";
     switchBtnEl.textContent = "切换";
-    switchBtnEl.addEventListener("click", () => {
+    switchBtnEl.addEventListener("click", async () => {
       switchStatus.textContent = "";
-      sendMessagePromise({ type: "switchAccount", username: acc.username })
-        .then((res) => {
-          if (!res?.ok) {
-            if (res?.needCaptcha) {
-              throw new Error("需要验证码，请上方输入密码与验证码后重试");
-            }
-            throw new Error(res?.error || "切换失败");
+      try {
+        const res = await sendMessagePromise({ type: "switchAccount", username: acc.username });
+        if (!res?.ok) {
+          if (res?.needCaptcha) {
+            await ensureCaptchaLoaded(false, res.captcha);
+            throw new Error(res?.error || "需要验证码，请上方输入密码与验证码后重试");
           }
-          switchStatus.textContent = "切换成功，请刷新页面";
-          switchStatus.style.color = "#137333";
-          chrome.storage.local.set({ activeUsername: acc.username });
-        })
-        .catch((err) => {
-          switchStatus.textContent = err.message || "切换失败";
-          switchStatus.style.color = "#c5221f";
-        });
+          throw new Error(res?.error || "切换失败");
+        }
+        switchStatus.textContent = "切换成功，请刷新页面";
+        switchStatus.style.color = "#137333";
+        chrome.storage.local.set({ activeUsername: acc.username });
+      } catch (err) {
+        switchStatus.textContent = err.message || "切换失败";
+        switchStatus.style.color = "#c5221f";
+      }
     });
 
     const delBtn = document.createElement("button");

@@ -11,7 +11,7 @@ const CAPTCHA_REFRESH = document.getElementById("popupCaptchaRefresh");
 const ACCOUNT_CACHE_KEY = "popupAccountsCache";
 let activeAccountUsername = "";
 let cachedAccounts = [];
-let popupCaptchaHash = "";
+let popupCaptchaInfo = null;
 let currentVersion = "new";
 let lastSummaryCache = null;
 let fetchSummaryPromise = null;
@@ -384,19 +384,72 @@ function saveSummaryCache(notifications, chats, chatCount) {
   });
 }
 
+function summarizeCaptcha(info) {
+  if (!info) return { hasHash: false, hasAuth: false, hasLoginhash: false };
+  return {
+    hasHash: Boolean(info.hash),
+    hasAuth: Boolean(info.auth),
+    hasLoginhash: Boolean(info.loginhash),
+  };
+}
+
+function normalizeCaptchaInfo(info = {}) {
+  if (!info) return null;
+  const normalized = {
+    hash: info.hash || "",
+    url: info.url || "",
+    image: info.image || "",
+    loginhash: info.loginhash || "",
+    modid: info.modid || "",
+    auth: info.auth || "",
+  };
+  if (!normalized.hash && !normalized.url && !normalized.image) return null;
+  return normalized;
+}
+
+function buildCaptchaContext(info) {
+  if (!info) return null;
+  const context = {
+    hash: info.hash || "",
+    loginhash: info.loginhash || "",
+    modid: info.modid || "",
+    auth: info.auth || "",
+  };
+  if (!context.hash && !context.loginhash && !context.auth) return null;
+  return context;
+}
+
+function buildCaptchaSubmitPayload(code) {
+  if (!code || !popupCaptchaInfo?.hash) return undefined;
+  return {
+    hash: popupCaptchaInfo.hash,
+    loginhash: popupCaptchaInfo.loginhash || "",
+    modid: popupCaptchaInfo.modid || "",
+    auth: popupCaptchaInfo.auth || "",
+    code,
+  };
+}
+
 async function ensurePopupCaptcha(force = false, preset = null) {
   if (!CAPTCHA_PANEL) return;
-  uiLog("ensurePopupCaptcha", { force, hasHash: Boolean(popupCaptchaHash), preset: Boolean(preset) });
-  if (preset && (preset.hash || preset.url)) {
+  uiLog("ensurePopupCaptcha", {
+    force,
+    cached: summarizeCaptcha(popupCaptchaInfo),
+    preset: summarizeCaptcha(preset),
+  });
+  if (preset && (preset.hash || preset.url || preset.image)) {
     showPopupCaptcha(preset);
     return;
   }
-  if (!force && popupCaptchaHash) {
-    showPopupCaptcha({ hash: popupCaptchaHash, url: CAPTCHA_IMG?.src || "" });
+  if (!force && popupCaptchaInfo?.hash) {
+    showPopupCaptcha({ ...popupCaptchaInfo, url: popupCaptchaInfo.url || CAPTCHA_IMG?.src || "" });
     return;
   }
   try {
-    const { ok, captcha } = await sendMessagePromise({ type: "getLoginCaptcha" });
+    const message = { type: "getLoginCaptcha" };
+    const context = buildCaptchaContext(preset || popupCaptchaInfo);
+    if (context) message.captcha = context;
+    const { ok, captcha } = await sendMessagePromise(message);
     if (ok && captcha) {
       showPopupCaptcha(captcha);
     } else {
@@ -409,13 +462,18 @@ async function ensurePopupCaptcha(force = false, preset = null) {
 }
 
 function showPopupCaptcha(info = {}) {
-  popupCaptchaHash = info.hash || "";
+  popupCaptchaInfo = normalizeCaptchaInfo(info);
   if (CAPTCHA_PANEL) {
     CAPTCHA_PANEL.classList.remove("hidden");
   }
   if (CAPTCHA_IMG) {
-    const url = info.url || "";
-    CAPTCHA_IMG.src = url ? `${url}${url.includes("?") ? "&" : "?"}_=${Date.now()}` : "";
+    const url = popupCaptchaInfo?.image || popupCaptchaInfo?.url || "";
+    const finalUrl = url
+      ? url.startsWith("data:")
+        ? url
+        : `${url}${url.includes("?") ? "&" : "?"}_=${Date.now()}`
+      : "";
+    CAPTCHA_IMG.src = finalUrl;
     CAPTCHA_IMG.alt = url ? "验证码" : "无法加载验证码";
   }
   if (CAPTCHA_INPUT) {
@@ -425,7 +483,7 @@ function showPopupCaptcha(info = {}) {
 }
 
 function hidePopupCaptcha() {
-  popupCaptchaHash = "";
+  popupCaptchaInfo = null;
   if (CAPTCHA_PANEL) {
     CAPTCHA_PANEL.classList.add("hidden");
   }
@@ -449,13 +507,18 @@ async function switchAccountFromPopup() {
   ACCOUNT_SWITCH_BTN.textContent = "切换中...";
   try {
     const captchaValue = (CAPTCHA_INPUT?.value || "").trim();
-    const captchaPayload = popupCaptchaHash && captchaValue ? { hash: popupCaptchaHash, code: captchaValue } : undefined;
+    const captchaPayload = buildCaptchaSubmitPayload(captchaValue);
     const res = await sendMessagePromise({ type: "switchAccount", username, captcha: captchaPayload });
-    uiLog("switchAccountFromPopup result", res);
+    uiLog("switchAccountFromPopup result", {
+      ok: res?.ok,
+      needCaptcha: res?.needCaptcha,
+      error: res?.error,
+      captcha: summarizeCaptcha(res?.captcha),
+    });
     if (res?.needCaptcha) {
       await ensurePopupCaptcha(false, res.captcha);
       setAccountButtonState("需验证码", "#b20000");
-      setStatus("站点需要验证码，请输入下方验证码后再试。", true);
+      setStatus(res?.error || "站点需要验证码，请输入下方验证码后再试。", true);
       return;
     }
     if (!res?.ok) throw new Error(res?.error || "切换失败");
@@ -474,6 +537,7 @@ async function switchAccountFromPopup() {
     }, 2000);
   } catch (err) {
     setAccountButtonState("切换失败", "#b20000");
+    setStatus(err?.message || "切换失败", true);
   } finally {
     if (!ACCOUNT_SWITCH_BTN.classList.contains("success")) {
       ACCOUNT_SWITCH_BTN.disabled = false;
