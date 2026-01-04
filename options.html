@@ -5,32 +5,40 @@
   <title>清水河畔助手设置</title>
   <style>
     :root {
-      --primary: #1f4c8f;
-      --primary-dark: #153a70;
-      --bg: #f6f7fb;
-      --card: #ffffff;
-      --border: #e3e7ef;
-      --text: #1f2a3d;
-      --muted: #6b7380;
-      --shadow: 0 10px 22px rgba(0, 0, 0, 0.08);
+      --md-sys-color-primary: #1a73e8;
+      --md-sys-color-on-primary: #ffffff;
+      --md-sys-color-primary-container: #d3e3fd;
+      --md-sys-color-on-primary-container: #041e49;
+      --md-sys-color-surface: #ffffff;
+      --md-sys-color-surface-container: #f6f8fc;
+      --md-sys-color-surface-container-high: #edf2fa;
+      --md-sys-color-on-surface: #1f1f1f;
+      --md-sys-color-on-surface-variant: #444746;
+      --md-sys-color-outline: #c4c7c5;
+      --md-sys-color-error: #b3261e;
+      --md-elevation-1: 0 1px 2px rgba(60, 64, 67, 0.3), 0 1px 3px rgba(60, 64, 67, 0.15);
+      --md-elevation-2: 0 2px 6px rgba(60, 64, 67, 0.3), 0 2px 6px rgba(60, 64, 67, 0.15);
+      --md-shape-small: 8px;
+      --md-shape-medium: 12px;
+      --md-shape-large: 16px;
     }
     * { box-sizing: border-box; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: "Roboto", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
       margin: 0;
       min-height: 100vh;
-      background: var(--bg);
-      color: var(--text);
+      background: var(--md-sys-color-surface-container);
+      color: var(--md-sys-color-on-surface);
       padding: 24px 16px 32px;
       display: flex;
       justify-content: center;
     }
     .page {
       width: min(760px, 100%);
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      box-shadow: var(--shadow);
+      background: var(--md-sys-color-surface);
+      border: 1px solid var(--md-sys-color-outline);
+      border-radius: var(--md-shape-large);
+      box-shadow: var(--md-elevation-2);
       padding: 20px 22px;
       display: flex;
       flex-direction: column;
@@ -39,25 +47,26 @@
     h1 {
       font-size: 20px;
       margin: 0 0 12px;
-      color: var(--primary);
+      color: var(--md-sys-color-on-surface);
+      font-weight: 500;
     }
     .setting-group {
       padding: 14px;
-      border-radius: 10px;
-      border: 1px solid var(--border);
-      background: #fff;
+      border-radius: var(--md-shape-medium);
+      border: 1px solid var(--md-sys-color-outline);
+      background: var(--md-sys-color-surface);
       display: flex;
       flex-direction: column;
       gap: 8px;
     }
     label {
       font-size: 16px;
-      color: var(--text);
+      color: var(--md-sys-color-on-surface);
     }
     p {
       margin-top: 0;
       margin-bottom: 6px;
-      color: var(--muted);
+      color: var(--md-sys-color-on-surface-variant);
       padding-left: 20px;
       line-height: 1.5;
     }
@@ -75,53 +84,53 @@
     }
     .text-row span {
       min-width: 90px;
-      color: var(--text);
-      font-weight: 600;
+      color: var(--md-sys-color-on-surface);
+      font-weight: 500;
     }
     .text-row input[type="text"] {
       flex: 1;
       padding: 8px 10px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
+      border: 1px solid var(--md-sys-color-outline);
+      border-radius: var(--md-shape-small);
       font-size: 14px;
-      background: #fdfefe;
+      background: var(--md-sys-color-surface);
       transition: border-color 120ms ease, box-shadow 120ms ease;
     }
     .text-row textarea {
       flex: 1;
       min-height: 88px;
       padding: 8px 10px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
+      border: 1px solid var(--md-sys-color-outline);
+      border-radius: var(--md-shape-small);
       font-size: 14px;
-      background: #fdfefe;
+      background: var(--md-sys-color-surface);
       resize: vertical;
       transition: border-color 120ms ease, box-shadow 120ms ease;
     }
     .text-row textarea:focus {
-      border-color: #aac4ec;
-      box-shadow: 0 0 0 2px rgba(31, 76, 143, 0.12);
+      border-color: var(--md-sys-color-primary);
+      box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.18);
       outline: none;
     }
     .text-row input[type="text"]:focus {
-      border-color: #aac4ec;
-      box-shadow: 0 0 0 2px rgba(31, 76, 143, 0.12);
+      border-color: var(--md-sys-color-primary);
+      box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.18);
       outline: none;
     }
     button {
       padding: 8px 14px;
-      border: 1px solid var(--primary);
-      border-radius: 8px;
-      background: var(--primary);
-      color: #fff;
+      border: 1px solid transparent;
+      border-radius: 999px;
+      background: var(--md-sys-color-primary);
+      color: var(--md-sys-color-on-primary);
       cursor: pointer;
       font-size: 14px;
       transition: background 120ms ease, transform 120ms ease, box-shadow 120ms ease;
     }
     button:hover {
-      background: var(--primary-dark);
+      background: #1967d2;
       transform: translateY(-1px);
-      box-shadow: 0 6px 14px rgba(31, 76, 143, 0.14);
+      box-shadow: var(--md-elevation-1);
     }
     button:active {
       transform: translateY(0);
@@ -130,7 +139,7 @@
       padding-left: 20px;
       margin-top: 0;
       margin-bottom: 0;
-      color: var(--muted);
+      color: var(--md-sys-color-on-surface-variant);
     }
     .toggle-row {
       display: flex;
@@ -140,8 +149,8 @@
     }
     .toggle-wrapper {
       position: relative;
-      width: 72px;
-      height: 28px;
+      width: 52px;
+      height: 32px;
       display: inline-block;
       cursor: pointer;
     }
@@ -154,40 +163,41 @@
     .toggle-track {
       position: absolute;
       inset: 0;
-      background: #e8ebf3;
-      border-radius: 14px;
+      background: var(--md-sys-color-surface-container-high);
+      border-radius: 999px;
+      border: 1px solid var(--md-sys-color-outline);
       transition: background 0.2s ease, box-shadow 0.2s ease;
-      box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.04);
+      box-shadow: none;
     }
     .toggle-thumb {
       position: absolute;
-      top: 2px;
-      left: 2px;
-      width: 24px;
-      height: 24px;
+      top: 5px;
+      left: 5px;
+      width: 20px;
+      height: 20px;
       border-radius: 50%;
-      background: #fff;
-      box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12);
-      transition: transform 0.2s cubic-bezier(0.8, 0.4, 0.3, 1.25), background 0.15s ease, box-shadow 0.2s ease;
+      background: var(--md-sys-color-outline);
+      box-shadow: none;
+      transition: transform 0.2s ease, background 0.15s ease;
     }
     .toggle-thumb::before {
       content: "";
       position: absolute;
-      inset: -5px;
+      inset: -6px;
       border-radius: 50%;
-      background: rgba(31, 76, 143, 0.18);
-      transform: scale(0.6);
+      background: rgba(26, 115, 232, 0.2);
+      transform: scale(0.7);
       opacity: 0;
       transition: transform 0.4s ease, opacity 0.4s ease;
     }
     .toggle-input:checked + .toggle-track .toggle-thumb {
-      background: #1f4c8f;
-      transform: translateX(42px);
-      box-shadow: 0 3px 8px rgba(31, 76, 143, 0.2);
+      background: var(--md-sys-color-on-primary);
+      transform: translateX(22px);
     }
     .toggle-input:checked + .toggle-track {
-      background: rgba(31, 76, 143, 0.14);
-      box-shadow: inset 0 1px 2px rgba(31, 76, 143, 0.2);
+      background: var(--md-sys-color-primary);
+      border-color: var(--md-sys-color-primary);
+      box-shadow: none;
     }
     .toggle-input:checked + .toggle-track .toggle-thumb::before {
       transform: scale(1);
@@ -195,7 +205,7 @@
     }
     .toggle-text {
       cursor: pointer;
-      color: var(--text);
+      color: var(--md-sys-color-on-surface);
     }
     .inline-actions {
       display: flex;
@@ -205,12 +215,12 @@
       min-width: 0;
     }
     .captcha-img {
-      background: #fdfefe;
+      background: var(--md-sys-color-surface);
       object-fit: cover;
     }
     .status-text {
       font-size: 13px;
-      color: var(--muted);
+      color: var(--md-sys-color-on-surface-variant);
       white-space: nowrap;
     }
     .input-row {
@@ -221,21 +231,21 @@
     }
     .input-row span {
       min-width: 90px;
-      color: var(--text);
-      font-weight: 600;
+      color: var(--md-sys-color-on-surface);
+      font-weight: 500;
     }
     .input-row input {
       flex: 1;
       padding: 8px 10px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
+      border: 1px solid var(--md-sys-color-outline);
+      border-radius: var(--md-shape-small);
       font-size: 14px;
-      background: #fdfefe;
+      background: var(--md-sys-color-surface);
       transition: border-color 120ms ease, box-shadow 120ms ease;
     }
     .input-row input:focus {
-      border-color: #aac4ec;
-      box-shadow: 0 0 0 2px rgba(31, 76, 143, 0.12);
+      border-color: var(--md-sys-color-primary);
+      box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.18);
       outline: none;
     }
     .pill {
@@ -245,10 +255,10 @@
       justify-content: center;
       gap: 6px;
       padding: 8px 12px;
-      border-radius: 10px;
-      border: 1px solid var(--border);
-      background: #f9fafc;
-      color: var(--text);
+      border-radius: 999px;
+      border: 1px solid var(--md-sys-color-outline);
+      background: var(--md-sys-color-surface);
+      color: var(--md-sys-color-on-surface);
       cursor: pointer;
       transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
     }
@@ -260,27 +270,27 @@
     .pill span {
       pointer-events: none;
       font-size: 14px;
-      font-weight: 600;
+      font-weight: 500;
     }
     .pill:hover {
-      border-color: #cfd8e6;
-      background: #f0f4fb;
+      border-color: var(--md-sys-color-primary);
+      background: rgba(26, 115, 232, 0.08);
     }
     .pill input:checked + span {
-      color: #fff;
+      color: var(--md-sys-color-on-primary-container);
     }
     .pill input:checked ~ .pill-bg {
       opacity: 1;
       transform: scale(1);
     }
     .pill input:checked ~ .pill-border {
-      border-color: #1f4c8f;
+      border-color: var(--md-sys-color-primary);
     }
     .pill .pill-bg {
       position: absolute;
       inset: 0;
-      border-radius: 10px;
-      background: linear-gradient(135deg, #1f4c8f, #153a70);
+      border-radius: 999px;
+      background: var(--md-sys-color-primary-container);
       opacity: 0;
       transform: scale(0.96);
       transition: opacity 0.15s ease, transform 0.15s ease;
@@ -289,8 +299,8 @@
     .pill .pill-border {
       position: absolute;
       inset: 0;
-      border-radius: 10px;
-      border: 1px solid var(--border);
+      border-radius: 999px;
+      border: 1px solid var(--md-sys-color-outline);
       pointer-events: none;
     }
     .pill span {
@@ -298,10 +308,10 @@
       z-index: 1;
     }
     .account-list {
-      border: 1px dashed var(--border);
-      border-radius: 10px;
+      border: 1px dashed var(--md-sys-color-outline);
+      border-radius: var(--md-shape-medium);
       padding: 10px 12px;
-      background: #f9fafc;
+      background: var(--md-sys-color-surface-container);
       display: flex;
       flex-direction: column;
       gap: 6px;
@@ -312,7 +322,7 @@
       justify-content: space-between;
       gap: 12px;
       padding-bottom: 6px;
-      border-bottom: 1px solid var(--border);
+      border-bottom: 1px solid var(--md-sys-color-outline);
     }
     .account-row:last-child {
       border-bottom: none;
@@ -325,14 +335,14 @@
       min-width: 0;
     }
     .account-name {
-      font-weight: 600;
-      color: var(--text);
+      font-weight: 500;
+      color: var(--md-sys-color-on-surface);
     }
     .account-badge {
       padding: 2px 6px;
       border-radius: 999px;
-      background: #e8f0ff;
-      color: var(--primary-dark);
+      background: var(--md-sys-color-primary-container);
+      color: var(--md-sys-color-on-primary-container);
       font-size: 12px;
     }
     .account-actions {
@@ -341,13 +351,13 @@
       gap: 8px;
     }
     .account-actions .ghost {
-      background: #f6f7fb;
-      color: var(--muted);
-      border-color: var(--border);
+      background: transparent;
+      color: var(--md-sys-color-primary);
+      border-color: var(--md-sys-color-outline);
     }
     .hint {
       font-size: 12px;
-      color: var(--muted);
+      color: var(--md-sys-color-on-surface-variant);
       font-weight: normal;
     }
   </style>
@@ -417,7 +427,7 @@
       <div class="text-row captcha-row" id="captchaArea" style="display:none; align-items: center;">
         <span>验证码</span>
         <div class="inline-actions" style="flex-wrap: wrap; row-gap: 6px;">
-          <img id="loginCaptchaImg" alt="验证码" class="captcha-img" style="height:34px; border:1px solid var(--border); border-radius:6px;" />
+          <img id="loginCaptchaImg" alt="验证码" class="captcha-img" style="height:34px; border:1px solid var(--md-sys-color-outline); border-radius:6px;" />
           <input type="text" id="loginCaptchaInput" placeholder="输入图片中的字符" style="width:140px;">
           <button id="captchaRefreshBtn" type="button" class="ghost">换一张</button>
         </div>
