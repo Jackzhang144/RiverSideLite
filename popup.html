@@ -6,6 +6,8 @@
     <style>
       :root {
         --md-sys-color-primary: #1a73e8;
+        --md-sys-color-primary-rgb: 26, 115, 232;
+        --md-sys-color-primary-hover: #1967d2;
         --md-sys-color-on-primary: #ffffff;
         --md-sys-color-primary-container: #d3e3fd;
         --md-sys-color-on-primary-container: #041e49;
@@ -16,6 +18,7 @@
         --md-sys-color-on-surface-variant: #444746;
         --md-sys-color-outline: #c4c7c5;
         --md-sys-color-error: #b3261e;
+        --md-sys-color-error-rgb: 179, 38, 30;
         --md-sys-color-error-container: #f9dedc;
         --md-sys-color-on-error-container: #410e0b;
         --md-elevation-1: 0 1px 2px rgba(60, 64, 67, 0.3), 0 1px 3px rgba(60, 64, 67, 0.15);
@@ -23,6 +26,28 @@
         --md-shape-small: 8px;
         --md-shape-medium: 12px;
         --md-shape-large: 16px;
+        color-scheme: light;
+      }
+      :root[data-theme="dark"] {
+        --md-sys-color-primary: #8ab4f8;
+        --md-sys-color-primary-rgb: 138, 180, 248;
+        --md-sys-color-primary-hover: #7aa7f6;
+        --md-sys-color-on-primary: #0b1c33;
+        --md-sys-color-primary-container: #1b3a66;
+        --md-sys-color-on-primary-container: #d2e3fc;
+        --md-sys-color-surface: #202124;
+        --md-sys-color-surface-container: #1c1d1f;
+        --md-sys-color-surface-container-high: #2a2b2f;
+        --md-sys-color-on-surface: #e8eaed;
+        --md-sys-color-on-surface-variant: #c4c7c5;
+        --md-sys-color-outline: #5f6368;
+        --md-sys-color-error: #f28b82;
+        --md-sys-color-error-rgb: 242, 139, 130;
+        --md-sys-color-error-container: #3b1f1d;
+        --md-sys-color-on-error-container: #fdd8d6;
+        --md-elevation-1: 0 1px 2px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.3);
+        --md-elevation-2: 0 2px 6px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.35);
+        color-scheme: dark;
       }
       * {
         box-sizing: border-box;
@@ -63,7 +88,7 @@
         padding: 10px 12px;
         border-radius: var(--md-shape-medium);
         background: var(--md-sys-color-error-container);
-        border: 1px solid rgba(179, 38, 30, 0.2);
+        border: 1px solid rgba(var(--md-sys-color-error-rgb), 0.2);
         color: var(--md-sys-color-on-error-container);
         box-shadow: var(--md-elevation-1);
       }
@@ -92,7 +117,7 @@
         transition: background 120ms ease, transform 120ms ease, box-shadow 120ms ease;
       }
       .link-btn:hover {
-        background: rgba(26, 115, 232, 0.08);
+        background: rgba(var(--md-sys-color-primary-rgb), 0.08);
         transform: translateY(-1px);
         box-shadow: none;
       }
@@ -128,7 +153,7 @@
         transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
       }
       .item:hover {
-        border-color: rgba(26, 115, 232, 0.3);
+        border-color: rgba(var(--md-sys-color-primary-rgb), 0.3);
         box-shadow: var(--md-elevation-2);
         transform: translateY(-1px);
       }
@@ -167,7 +192,7 @@
         transition: background 120ms ease, color 120ms ease;
       }
       .read-btn:hover {
-        background: rgba(179, 38, 30, 0.12);
+        background: rgba(var(--md-sys-color-error-rgb), 0.12);
         color: var(--md-sys-color-error);
       }
       .empty {
@@ -177,7 +202,7 @@
         padding: 12px 0;
       }
       .error {
-        color: #b20000;
+        color: var(--md-sys-color-error);
       }
       .footer {
         margin-top: auto;
@@ -200,8 +225,8 @@
         transition: background 120ms ease, border-color 120ms ease, transform 120ms ease, box-shadow 120ms ease;
       }
       .btn:hover {
-        background: #1967d2;
-        border-color: #1967d2;
+        background: var(--md-sys-color-primary-hover);
+        border-color: var(--md-sys-color-primary-hover);
         transform: translateY(-1px);
         box-shadow: var(--md-elevation-1);
       }
@@ -259,7 +284,7 @@
         transition: background 120ms ease, color 120ms ease, transform 120ms ease, box-shadow 120ms ease;
       }
       .icon-btn:hover {
-        background: rgba(26, 115, 232, 0.12);
+        background: rgba(var(--md-sys-color-primary-rgb), 0.12);
         color: var(--md-sys-color-primary);
         transform: translateY(-1px);
         box-shadow: none;

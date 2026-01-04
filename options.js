@@ -8,6 +8,9 @@ const meowTestStatus = document.getElementById("meowTestStatus");
 const meowLinkNoneRadio = document.getElementById("meowLinkNone");
 const meowLinkListRadio = document.getElementById("meowLinkList");
 const meowLinkThreadRadio = document.getElementById("meowLinkThread");
+const themeAutoRadio = document.getElementById("themeAuto");
+const themeLightRadio = document.getElementById("themeLight");
+const themeDarkRadio = document.getElementById("themeDark");
 const quickBoardsToggle = document.getElementById("quickBoardsToggle");
 const quickBoardNameInput = document.getElementById("quickBoardName");
 const quickBoardIdInput = document.getElementById("quickBoardId");
@@ -28,6 +31,7 @@ const captchaRefreshBtn = document.getElementById("captchaRefreshBtn");
 const KEY_RAW = "RiversideLiteKey"; // 16-byte AES key
 let cachedCryptoKey = null;
 let cachedCaptchaInfo = null;
+let themeListenerCleanup = null;
 const uiLog = (...args) => {
   const ts = new Date().toISOString();
   console.log(`[RiversideLite][options][${ts}]`, ...args);
@@ -35,6 +39,24 @@ const uiLog = (...args) => {
 
 let quickBoardsCache = [];
 let editingQuickBoardIndex = null;
+
+function applyThemeSetting(mode) {
+  applyThemeMode(mode);
+  if (themeListenerCleanup) {
+    themeListenerCleanup();
+    themeListenerCleanup = null;
+  }
+  if (normalizeThemeMode(mode) === "auto") {
+    themeListenerCleanup = watchSystemTheme(() => applyThemeMode("auto"));
+  }
+}
+
+function syncThemeRadios(mode) {
+  const normalized = normalizeThemeMode(mode);
+  themeAutoRadio.checked = normalized === "auto";
+  themeLightRadio.checked = normalized === "light";
+  themeDarkRadio.checked = normalized === "dark";
+}
 
 function refreshAccountListFromStorage() {
   chrome.storage.local.get({ accounts: [], activeUsername: "" }, ({ accounts, activeUsername }) => {
@@ -163,6 +185,9 @@ function handleQuickBoardSave() {
 function init() {
   // Load settings and update UI
   chrome.storage.local.get(STORAGE_DEFAULTS, (items) => {
+    const themeMode = items.themeMode || STORAGE_DEFAULTS.themeMode;
+    syncThemeRadios(themeMode);
+    applyThemeSetting(themeMode);
     notificationsToggle.checked = Boolean(items.notificationsEnabled);
     meowToggle.checked = Boolean(items.meowPushEnabled);
     meowNicknameInput.value = items.meowNickname || "";
@@ -190,6 +215,27 @@ function init() {
   // Save notification setting on change
   notificationsToggle.addEventListener("change", () => {
     chrome.storage.local.set({ notificationsEnabled: notificationsToggle.checked });
+  });
+
+  themeAutoRadio.addEventListener("change", () => {
+    if (themeAutoRadio.checked) {
+      chrome.storage.local.set({ themeMode: "auto" });
+      applyThemeSetting("auto");
+    }
+  });
+
+  themeLightRadio.addEventListener("change", () => {
+    if (themeLightRadio.checked) {
+      chrome.storage.local.set({ themeMode: "light" });
+      applyThemeSetting("light");
+    }
+  });
+
+  themeDarkRadio.addEventListener("change", () => {
+    if (themeDarkRadio.checked) {
+      chrome.storage.local.set({ themeMode: "dark" });
+      applyThemeSetting("dark");
+    }
   });
 
   // Save version setting on change
@@ -377,6 +423,11 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     if (editingQuickBoardIndex !== null) {
       resetQuickBoardForm();
     }
+  }
+  if (changes.themeMode) {
+    const mode = changes.themeMode.newValue || STORAGE_DEFAULTS.themeMode;
+    syncThemeRadios(mode);
+    applyThemeSetting(mode);
   }
 });
 

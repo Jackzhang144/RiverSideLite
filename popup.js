@@ -21,6 +21,7 @@ let quickBoardsEnabled = false;
 let quickBoards = [];
 let showingBoards = false;
 let lastRenderData = null;
+let themeListenerCleanup = null;
 const uiLog = (...args) => {
   const ts = new Date().toISOString();
   console.log(`[RiversideLite][popup][${ts}]`, ...args);
@@ -43,6 +44,17 @@ CAPTCHA_REFRESH?.addEventListener("click", () => ensurePopupCaptcha(true));
 ACCOUNT_SELECT?.addEventListener("change", () => updateSwitchButtonState());
 init();
 
+function applyThemeSetting(mode) {
+  applyThemeMode(mode);
+  if (themeListenerCleanup) {
+    themeListenerCleanup();
+    themeListenerCleanup = null;
+  }
+  if (normalizeThemeMode(mode) === "auto") {
+    themeListenerCleanup = watchSystemTheme(() => applyThemeMode("auto"));
+  }
+}
+
 function init() {
   const sessionAccounts = readAccountsSession();
   if (sessionAccounts?.accounts?.length) {
@@ -52,7 +64,16 @@ function init() {
 
   chrome.storage.local.get(
     STORAGE_DEFAULTS,
-    ({ version, accounts, activeUsername, lastSummaryCache: cache, quickBoardsEnabled: qbEnabled, quickBoards: qb }) => {
+    ({
+      version,
+      accounts,
+      activeUsername,
+      lastSummaryCache: cache,
+      quickBoardsEnabled: qbEnabled,
+      quickBoards: qb,
+      themeMode,
+    }) => {
+      applyThemeSetting(themeMode || STORAGE_DEFAULTS.themeMode);
       currentVersion = version === "old" ? "old" : "new";
       activeAccountUsername = activeUsername || activeAccountUsername;
       lastSummaryCache = cache || null;
@@ -91,6 +112,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     if (showingBoards) {
       renderBoardsList();
     }
+  }
+  if (changes.themeMode) {
+    applyThemeSetting(changes.themeMode.newValue || STORAGE_DEFAULTS.themeMode);
   }
 });
 
