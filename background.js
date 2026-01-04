@@ -109,13 +109,7 @@ async function checkStatus() {
     const previousTotal = cachedState.lastTotal;
     const summary = await fetchSummaryApi();
     const payload = summary?.data && summary.code !== undefined ? summary.data : summary;
-    const chat = payload?.new_messages?.chat || 0;
-    const postsObj = payload?.new_messages?.posts || {};
-    const notice = Object.values(postsObj).reduce(
-      (acc, val) => acc + (typeof val === "number" ? val : 0),
-      0
-    );
-    const total = chat + notice;
+    const { chat, notice, total } = getSummaryCounts(payload);
     log("checkStatus summary counts", { total, notice, chat });
 
     if (total > 0) {
@@ -152,13 +146,7 @@ async function refreshAndShow() {
     const summary = await fetchSummaryApi();
     // Optionally update stored total to keep badge in sync
     const payload = summary?.data && summary.code !== undefined ? summary.data : summary;
-    const chat = payload?.new_messages?.chat || 0;
-    const postsObj = payload?.new_messages?.posts || {};
-    const notice = Object.values(postsObj).reduce(
-      (acc, val) => acc + (typeof val === "number" ? val : 0),
-      0
-    );
-    const total = chat + notice;
+    const { total } = getSummaryCounts(payload);
     await persistState({ ...cachedState, lastTotal: total, lastErrorCode: "" });
     updateBadge(total > 0 ? total.toString() : "", total > 0 ? "#00FF00" : "#000000");
   } catch (error) {
@@ -173,6 +161,41 @@ async function refreshAndShow() {
 function updateBadge(text, color) {
   chrome.action.setBadgeText({ text: text });
   chrome.action.setBadgeBackgroundColor({ color: color });
+}
+
+function getSummaryCounts(payload) {
+  const chat = toCount(payload?.new_messages?.chat) || 0;
+  const postsObj = payload?.new_messages?.posts || {};
+  let notice = sumNumericValues(postsObj);
+  const reportFromPosts = toCount(postsObj?.report);
+  if (reportFromPosts === null) {
+    const reportFromMessages = toCount(payload?.new_messages?.report);
+    if (reportFromMessages !== null) {
+      notice += reportFromMessages;
+    } else {
+      notice += countReportNotifications(payload);
+    }
+  }
+  return { chat, notice, total: chat + notice };
+}
+
+function sumNumericValues(obj) {
+  if (!obj || typeof obj !== "object") return 0;
+  return Object.values(obj).reduce((acc, val) => {
+    const num = toCount(val);
+    return Number.isFinite(num) ? acc + num : acc;
+  }, 0);
+}
+
+function toCount(value) {
+  if (value === null || typeof value === "undefined") return null;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+function countReportNotifications(payload) {
+  const items = Array.isArray(payload?.new_notifications) ? payload.new_notifications : [];
+  return items.filter((item) => isReportNotification(item)).length;
 }
 
 function getErrorStatusCode(error) {
@@ -361,13 +384,7 @@ async function ensureBadge() {
   try {
     const summary = await fetchSummaryApi();
     const payload = summary?.data && summary.code !== undefined ? summary.data : summary;
-    const chat = payload?.new_messages?.chat || 0;
-    const postsObj = payload?.new_messages?.posts || {};
-    const notice = Object.values(postsObj).reduce(
-      (acc, val) => acc + (typeof val === "number" ? val : 0),
-      0
-    );
-    const total = chat + notice;
+    const { total } = getSummaryCounts(payload);
     updateBadge(total > 0 ? total.toString() : "", total > 0 ? "#00FF00" : "#000000");
   } catch (_) {}
 }
@@ -539,8 +556,7 @@ function buildNotificationTarget(item, version, fallback, linkMode = "thread") {
   if (linkMode === "none") return "";
   if (linkMode === "list") return fallback;
   if (isRateNotification(item) || isTaskCompletionNotification(item)) return "";
-  const summaryText = stripHtml([item?.summary, item?.html_message, item?.subject].filter(Boolean).join(" "));
-  if (item.kind === "report" || /有新的举报等待处理/.test(summaryText)) {
+  if (isReportNotification(item)) {
     return "https://bbs.uestc.edu.cn/forum.php?mod=modcp&action=report";
   }
   const url = buildThreadUrl(item, version === "old");
@@ -1108,6 +1124,12 @@ function isRateNotification(item) {
 function isTaskCompletionNotification(item) {
   const text = stripHtml([item?.subject, item?.summary, item?.html_message].filter(Boolean).join(" "));
   return text.includes("恭喜您完成任务");
+}
+
+function isReportNotification(item) {
+  if (item?.kind === "report") return true;
+  const text = stripHtml([item?.summary, item?.html_message, item?.subject].filter(Boolean).join(" "));
+  return /有新的举报等待处理/.test(text);
 }
 
 function buildLegacyChatUrl(chat) {
